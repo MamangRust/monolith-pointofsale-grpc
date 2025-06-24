@@ -4,9 +4,10 @@ import (
 	"context"
 	"time"
 
+	"github.com/MamangRust/monolith-point-of-sale-cashier/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-point-of-sale-cashier/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-cashier/internal/repository"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-point-of-sale-pkg/trace_unic"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/cashier_errors"
@@ -21,6 +22,8 @@ import (
 
 type cashierQueryService struct {
 	ctx             context.Context
+	errorhandler    errorhandler.CashierQueryError
+	mencache        mencache.CashierQueryCache
 	trace           trace.Tracer
 	cashierQuery    repository.CashierQueryRepository
 	logger          logger.LoggerInterface
@@ -29,7 +32,10 @@ type cashierQueryService struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewCashierQueryService(ctx context.Context, cashierQuery repository.CashierQueryRepository,
+func NewCashierQueryService(ctx context.Context,
+	errorhandler errorhandler.CashierQueryError,
+	mencache mencache.CashierQueryCache,
+	cashierQuery repository.CashierQueryRepository,
 	logger logger.LoggerInterface, mapping response_service.CashierResponseMapper,
 ) *cashierQueryService {
 	requestCounter := prometheus.NewCounterVec(
@@ -53,6 +59,8 @@ func NewCashierQueryService(ctx context.Context, cashierQuery repository.Cashier
 
 	return &cashierQueryService{
 		ctx:             ctx,
+		errorhandler:    errorhandler,
+		mencache:        mencache,
 		trace:           otel.Tracer("cashier-query-service"),
 		cashierQuery:    cashierQuery,
 		logger:          logger,
@@ -63,300 +71,210 @@ func NewCashierQueryService(ctx context.Context, cashierQuery repository.Cashier
 }
 
 func (s *cashierQueryService) FindAll(req *requests.FindAllCashiers) ([]*response.CashierResponse, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindAll"
+
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
+	search := req.Search
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
 	defer func() {
-		s.recordMetrics("FindAllCashiers", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindAllCashiers")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("page.number", req.Page),
-		attribute.Int("page.size", req.PageSize),
-		attribute.String("search.term", req.Search),
-	)
-
-	s.logger.Debug("Fetching all cashiers",
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize),
-		zap.String("search", req.Search))
-
-	if req.Page <= 0 {
-		req.Page = 1
-	}
-	if req.PageSize <= 0 {
-		req.PageSize = 10
+	if data, total, found := s.mencache.GetCachedCashiersCache(req); found {
+		logSuccess("Successfully fetched cashier from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+		return data, total, nil
 	}
 
-	cashiers, totalRecords, err := s.cashierQuery.FindAllCashiers(req)
+	cashier, totalRecords, err := s.cashierQuery.FindAllCashiers(req)
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ALL_CASHIERS")
-		status = "failed_find_all_cashiers"
-
-		s.logger.Error("Failed to fetch cashiers",
-			zap.Error(err),
-			zap.Int("page", req.Page),
-			zap.Int("pageSize", req.PageSize),
-			zap.String("search", req.Search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "find_all_cashiers_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find all cashiers")
-
-		return nil, nil, cashier_errors.ErrFailedFindAllCashiers
+		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_cashier", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.Int("result.count", len(cashiers)),
-		attribute.Int("total.records", *totalRecords),
-	)
+	categoriesResponse := s.mapping.ToCashiersResponse(cashier)
 
-	cashierResponse := s.mapping.ToCashiersResponse(cashiers)
+	s.mencache.SetCachedCashiersCache(req, categoriesResponse, totalRecords)
 
-	s.logger.Debug("Successfully fetched cashiers",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize))
+	logSuccess("Successfully fetched cashier", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
-	return cashierResponse, totalRecords, nil
-}
-
-func (s *cashierQueryService) FindById(cashierID int) (*response.CashierResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindCashierById", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindCashierById")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("cashier.id", cashierID),
-	)
-
-	s.logger.Debug("Fetching cashier by ID",
-		zap.Int("cashierID", cashierID))
-
-	cashier, err := s.cashierQuery.FindById(cashierID)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_CASHIER_BY_ID")
-		status = "failed_find_cashier_by_id"
-
-		s.logger.Error("Failed to retrieve cashier details",
-			zap.Error(err),
-			zap.Int("cashier_id", cashierID),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "find_cashier_by_id_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find cashier by ID")
-
-		return nil, cashier_errors.ErrFailedFindCashierById
-	}
-
-	return s.mapping.ToCashierResponse(cashier), nil
-}
-
-func (s *cashierQueryService) FindByActive(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindActiveCashiers", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindActiveCashiers")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("page.number", req.Page),
-		attribute.Int("page.size", req.PageSize),
-		attribute.String("search.term", req.Search),
-	)
-
-	s.logger.Debug("Fetching active cashiers",
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize),
-		zap.String("search", req.Search))
-
-	if req.Page <= 0 {
-		req.Page = 1
-	}
-	if req.PageSize <= 0 {
-		req.PageSize = 10
-	}
-
-	cashiers, totalRecords, err := s.cashierQuery.FindByActive(req)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_ACTIVE_CASHIERS")
-		status = "failed_find_active_cashiers"
-
-		s.logger.Error("Failed to retrieve active cashiers",
-			zap.Error(err),
-			zap.Int("page", req.Page),
-			zap.Int("pageSize", req.PageSize),
-			zap.String("search", req.Search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "find_active_cashiers_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find active cashiers")
-
-		return nil, nil, cashier_errors.ErrFailedFindCashierByActive
-	}
-
-	span.SetAttributes(
-		attribute.Int("result.count", len(cashiers)),
-		attribute.Int("total.records", *totalRecords),
-	)
-
-	s.logger.Debug("Successfully fetched active cashiers",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize))
-
-	return s.mapping.ToCashiersResponseDeleteAt(cashiers), totalRecords, nil
-}
-
-func (s *cashierQueryService) FindByTrashed(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
-	defer func() {
-		s.recordMetrics("FindTrashedCashiers", status, startTime)
-	}()
-
-	_, span := s.trace.Start(s.ctx, "FindTrashedCashiers")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("page.number", req.Page),
-		attribute.Int("page.size", req.PageSize),
-		attribute.String("search.term", req.Search),
-	)
-
-	s.logger.Debug("Fetching trashed cashiers",
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize),
-		zap.String("search", req.Search))
-
-	if req.Page <= 0 {
-		req.Page = 1
-	}
-	if req.PageSize <= 0 {
-		req.PageSize = 10
-	}
-
-	cashiers, totalRecords, err := s.cashierQuery.FindByTrashed(req)
-	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_TRASHED_CASHIERS")
-		status = "failed_find_trashed_cashiers"
-
-		s.logger.Error("Failed to retrieve trashed cashiers",
-			zap.Error(err),
-			zap.Int("page", req.Page),
-			zap.Int("pageSize", req.PageSize),
-			zap.String("search", req.Search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "find_trashed_cashiers_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find trashed cashiers")
-
-		return nil, nil, cashier_errors.ErrFailedFindCashierByTrashed
-	}
-
-	span.SetAttributes(
-		attribute.Int("result.count", len(cashiers)),
-		attribute.Int("total.records", *totalRecords),
-	)
-
-	s.logger.Debug("Successfully fetched trashed cashiers",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize))
-
-	return s.mapping.ToCashiersResponseDeleteAt(cashiers), totalRecords, nil
+	return categoriesResponse, totalRecords, nil
 }
 
 func (s *cashierQueryService) FindByMerchant(req *requests.FindAllCashierMerchant) ([]*response.CashierResponse, *int, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "FindByMerchant"
+
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
+	search := req.Search
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search), attribute.Int("merchant.id", req.MerchantID))
+
 	defer func() {
-		s.recordMetrics("FindCashiersByMerchant", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "FindCashiersByMerchant")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("merchant.id", req.MerchantID),
-		attribute.Int("page.number", req.Page),
-		attribute.Int("page.size", req.PageSize),
-		attribute.String("search.term", req.Search),
-	)
-
-	s.logger.Debug("Fetching merchant's cashiers",
-		zap.Int("merchant_id", req.MerchantID),
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize),
-		zap.String("search", req.Search))
-
-	if req.Page <= 0 {
-		req.Page = 1
-	}
-	if req.PageSize <= 0 {
-		req.PageSize = 10
+	if data, total, found := s.mencache.GetCachedCashiersByMerchant(req); found {
+		logSuccess("Successfully fetched cashier from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+		return data, total, nil
 	}
 
-	cashiers, totalRecords, err := s.cashierQuery.FindByMerchant(req)
+	cashier, totalRecords, err := s.cashierQuery.FindByMerchant(req)
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_CASHIERS_BY_MERCHANT")
-		status = "failed_find_cashiers_by_merchant"
-
-		s.logger.Error("Failed to retrieve merchant's cashiers",
-			zap.Error(err),
-			zap.Int("merchant_id", req.MerchantID),
-			zap.Int("page", req.Page),
-			zap.Int("pageSize", req.PageSize),
-			zap.String("search", req.Search),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "find_cashiers_by_merchant_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to find cashiers by merchant")
-
-		return nil, nil, cashier_errors.ErrFailedFindCashierByMerchant
+		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_cashier", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.Int("result.count", len(cashiers)),
-		attribute.Int("total.records", *totalRecords),
-	)
+	categoriesResponse := s.mapping.ToCashiersResponse(cashier)
 
-	s.logger.Debug("Successfully fetched merchant's cashiers",
-		zap.Int("totalRecords", *totalRecords),
-		zap.Int("page", req.Page),
-		zap.Int("pageSize", req.PageSize))
+	s.mencache.SetCachedCashiersByMerchant(req, categoriesResponse, totalRecords)
 
-	return s.mapping.ToCashiersResponse(cashiers), totalRecords, nil
+	logSuccess("Successfully fetched cashier", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
+	return categoriesResponse, totalRecords, nil
+}
+
+func (s *cashierQueryService) FindByActive(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
+	const method = "FindByActive"
+
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
+	search := req.Search
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
+
+	if data, total, found := s.mencache.GetCachedCashiersActive(req); found {
+		logSuccess("Successfully fetched cashier from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
+		return data, total, nil
+	}
+
+	cashier, totalRecords, err := s.cashierQuery.FindByActive(req)
+
+	if err != nil {
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_BY_ACTIVE_cashier", span, &status, cashier_errors.ErrFailedFindCashierByActive, zap.Error(err))
+	}
+
+	so := s.mapping.ToCashiersResponseDeleteAt(cashier)
+
+	s.mencache.SetCachedCashiersActive(req, so, totalRecords)
+
+	logSuccess("Successfully fetched cashier", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
+	return so, totalRecords, nil
+}
+
+func (s *cashierQueryService) FindByTrashed(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
+	const method = "FindByTrashed"
+
+	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
+	search := req.Search
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+
+	defer func() {
+		end(status)
+	}()
+
+	if data, total, found := s.mencache.GetCachedCashiersTrashed(req); found {
+		logSuccess("Successfully fetched categories from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
+		return data, total, nil
+	}
+
+	categories, totalRecords, err := s.cashierQuery.FindByTrashed(req)
+
+	if err != nil {
+		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_BY_TRASHED_cashier", span, &status, cashier_errors.ErrFailedFindCashierByTrashed, zap.Error(err))
+	}
+
+	so := s.mapping.ToCashiersResponseDeleteAt(categories)
+
+	s.mencache.SetCachedCashiersTrashed(req, so, totalRecords)
+
+	logSuccess("Successfully fetched categories", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+
+	return so, totalRecords, nil
+}
+
+func (s *cashierQueryService) FindById(cashier_id int) (*response.CashierResponse, *response.ErrorResponse) {
+	const method = "FindById"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("cashier.id", cashier_id))
+
+	defer func() {
+		end(status)
+	}()
+
+	if data, found := s.mencache.GetCachedCashier(cashier_id); found {
+		logSuccess("Successfully fetched cashier from cache", zap.Int("cashier.id", cashier_id))
+
+		return data, nil
+	}
+
+	cashier, err := s.cashierQuery.FindById(cashier_id)
+
+	if err != nil {
+		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_cashier_BY_ID", span, &status, cashier_errors.ErrFailedFindCashierById, zap.Error(err))
+	}
+
+	so := s.mapping.ToCashierResponse(cashier)
+
+	s.mencache.SetCachedCashier(so)
+
+	logSuccess("Successfully fetched cashier", zap.Int("cashier.id", cashier_id))
+
+	return so, nil
+}
+
+func (s *cashierQueryService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
+}
+
+func (s *cashierQueryService) normalizePagination(page, pageSize int) (int, int) {
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 10
+	}
+	return page, pageSize
 }
 
 func (s *cashierQueryService) recordMetrics(method string, status string, start time.Time) {

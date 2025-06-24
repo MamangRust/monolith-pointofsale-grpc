@@ -25,7 +25,7 @@ type Deps struct {
 	Ctx context.Context
 }
 
-func NewRepositories(deps Deps) *Repositories {
+func NewRepositories(deps *Deps) *Repositories {
 	mapperCashier := recordmapper.NewCashierRecordMapper()
 	mapperMerchant := recordmapper.NewMerchantRecordMapper()
 	mapperProduct := recordmapper.NewProductRecordMapper()

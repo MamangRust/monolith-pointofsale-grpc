@@ -1,0 +1,14 @@
+{"level":"error","ts":"2025-06-23T18:24:44.578Z","caller":"database/database.go:49","msg":"Failed to ping database","error":"dial tcp [::1]:5432: connect: connection refused"}
+{"level":"fatal","ts":"2025-06-23T18:24:44.578Z","caller":"apps/server.go:83","msg":"Failed to connect to database","error":"failed to ping database: dial tcp [::1]:5432: connect: connection refused"}
+{"level":"error","ts":"2025-06-23T18:37:37.976Z","caller":"database/database.go:49","msg":"Failed to ping database","error":"dial tcp [::1]:5432: connect: connection refused"}
+{"level":"fatal","ts":"2025-06-23T18:37:37.977Z","caller":"apps/server.go:83","msg":"Failed to connect to database","error":"failed to ping database: dial tcp [::1]:5432: connect: connection refused"}
+{"level":"error","ts":"2025-06-23T19:09:24.463Z","caller":"database/database.go:49","msg":"Failed to ping database","error":"dial tcp [::1]:5432: connect: connection refused"}
+{"level":"fatal","ts":"2025-06-23T19:09:24.463Z","caller":"apps/server.go:83","msg":"Failed to connect to database","error":"failed to ping database: dial tcp [::1]:5432: connect: connection refused"}
+{"level":"debug","ts":"2025-06-23T21:54:38.505Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-23T21:54:38.518Z","caller":"apps/server.go:190","msg":"Server running on port 50051"}
+{"level":"debug","ts":"2025-06-23T21:54:38.518Z","caller":"apps/server.go:205","msg":"gRPC server listening on port 50051","port":50051}
+{"level":"info","ts":"2025-06-23T21:54:38.518Z","caller":"apps/server.go:197","msg":"Metrics server listening on :8081"}
+{"level":"debug","ts":"2025-06-23T22:45:20.318Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-23T22:45:20.326Z","caller":"apps/server.go:190","msg":"Server running on port 50051"}
+{"level":"debug","ts":"2025-06-23T22:45:20.326Z","caller":"apps/server.go:205","msg":"gRPC server listening on port 50051","port":50051}
+{"level":"info","ts":"2025-06-23T22:45:20.326Z","caller":"apps/server.go:197","msg":"Metrics server listening on :8081"}

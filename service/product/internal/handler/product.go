@@ -21,7 +21,7 @@ type productHandleGrpc struct {
 	mapping               protomapper.ProductProtoMapper
 }
 
-func NewProductHandleGrpc(service service.Service) *productHandleGrpc {
+func NewProductHandleGrpc(service *service.Service) *productHandleGrpc {
 	return &productHandleGrpc{
 		productQueryService:   service.ProductQuery,
 		productCommandService: service.ProductCommand,

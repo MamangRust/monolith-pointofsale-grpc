@@ -7,13 +7,16 @@ RUN go mod tidy && go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o transaction ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o transaction ./cmd/main.go
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
-COPY --from=builder /app/transaction .
+RUN mkdir -p /var/log/app
+
+
+COPY --chmod=755 --from=builder /app/transaction .
 
 EXPOSE 50060 8090
 CMD ["./transaction"]

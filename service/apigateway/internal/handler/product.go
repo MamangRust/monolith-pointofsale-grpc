@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/upload_image"
@@ -13,15 +15,23 @@ import (
 	response_api "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcode "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type productHandleApi struct {
-	client       pb.ProductServiceClient
-	logger       logger.LoggerInterface
-	mapping      response_api.ProductResponseMapper
-	upload_image upload_image.ImageUploads
+	client          pb.ProductServiceClient
+	logger          logger.LoggerInterface
+	mapping         response_api.ProductResponseMapper
+	upload_image    upload_image.ImageUploads
+	trace           trace.Tracer
+	requestCounter  *prometheus.CounterVec
+	requestDuration *prometheus.HistogramVec
 }
 
 func NewHandlerProduct(
@@ -31,11 +41,33 @@ func NewHandlerProduct(
 	mapping response_api.ProductResponseMapper,
 	upload_image upload_image.ImageUploads,
 ) *productHandleApi {
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "product_handler_requests_total",
+			Help: "Total number of product requests",
+		},
+		[]string{"method", "status"},
+	)
+
+	requestDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "product_handler_request_duration_seconds",
+			Help:    "Duration of product requests",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "status"},
+	)
+
+	prometheus.MustRegister(requestCounter)
+
 	productHandler := &productHandleApi{
-		client:       client,
-		logger:       logger,
-		mapping:      mapping,
-		upload_image: upload_image,
+		client:          client,
+		logger:          logger,
+		mapping:         mapping,
+		upload_image:    upload_image,
+		trace:           otel.Tracer("product-handler"),
+		requestCounter:  requestCounter,
+		requestDuration: requestDuration,
 	}
 
 	routercategory := router.Group("/api/product")
@@ -74,19 +106,27 @@ func NewHandlerProduct(
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve product data"
 // @Router /api/product [get]
 func (h *productHandleApi) FindAllProduct(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllProduct"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllProductRequest{
 		Page:     int32(page),
@@ -97,11 +137,14 @@ func (h *productHandleApi) FindAllProduct(c echo.Context) error {
 	res, err := h.client.FindAll(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve product data", zap.Error(err))
+		logError("Failed to retrieve product data", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedFindAll(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationProduct(res)
+
+	logSuccess("Successfully retrieve product data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -130,15 +173,27 @@ func (h *productHandleApi) FindByMerchant(c echo.Context) error {
 		return product_errors.ErrApiProductInvalidMerchantId(c)
 	}
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByMerchant"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 12
-	}
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
+	search := c.QueryParam("search")
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllProductMerchantRequest{
 		MerchantId: int32(merchantID),
@@ -168,20 +223,19 @@ func (h *productHandleApi) FindByMerchant(c echo.Context) error {
 		}
 	}
 
-	ctx := c.Request().Context()
 	res, err := h.client.FindByMerchant(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to retrieve product data by merchant",
-			zap.Error(err),
-			zap.Int("merchant_id", merchantID),
-			zap.Any("request", req),
-		)
+		logError("Failed to retrieve product data by merchant", err, zap.Error(err))
 
 		return product_errors.ErrApiProductFailedFindByMerchant(c)
 	}
 
-	return c.JSON(http.StatusOK, h.mapping.ToApiResponsePaginationProduct(res))
+	so := h.mapping.ToApiResponsePaginationProduct(res)
+
+	logSuccess("Successfully retrieve product data by merchant", zap.Bool("success", true))
+
+	return c.JSON(http.StatusOK, so)
 }
 
 // @Security Bearer
@@ -203,19 +257,27 @@ func (h *productHandleApi) FindByCategory(c echo.Context) error {
 		return product_errors.ErrApiProductInvalidCategoryName(c)
 	}
 
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByCategory"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllProductCategoryRequest{
 		CategoryName: categoryName,
@@ -225,12 +287,17 @@ func (h *productHandleApi) FindByCategory(c echo.Context) error {
 	}
 
 	res, err := h.client.FindByCategory(ctx, req)
+
 	if err != nil {
-		h.logger.Debug("Failed to retrieve product data by category", zap.Error(err))
+		logError("Failed to retrieve product data by category", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedFindByCategory(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationProduct(res)
+
+	logSuccess("Successfully retrieve product data by category", zap.Bool("success", true))
+
 	return c.JSON(http.StatusOK, so)
 }
 
@@ -246,14 +313,21 @@ func (h *productHandleApi) FindByCategory(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve product data"
 // @Router /api/product/{id} [get]
 func (h *productHandleApi) FindById(c echo.Context) error {
+	const method = "FindById"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid product ID", zap.Error(err))
+		logError("Failed to parse product id", err, zap.Error(err))
+
 		return product_errors.ErrApiProductInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdProductRequest{
 		Id: int32(id),
@@ -262,11 +336,14 @@ func (h *productHandleApi) FindById(c echo.Context) error {
 	res, err := h.client.FindById(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve product data", zap.Error(err))
+		logError("Failed to retrieve product data by id", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedFindById(c)
 	}
 
 	so := h.mapping.ToApiResponseProduct(res)
+
+	logSuccess("Successfully retrieve product data by id", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -284,19 +361,27 @@ func (h *productHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve product data"
 // @Router /api/product/active [get]
 func (h *productHandleApi) FindByActive(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllProductRequest{
 		Page:     int32(page),
@@ -307,11 +392,14 @@ func (h *productHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.client.FindByActive(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve product data", zap.Error(err))
+		logError("Failed to retrieve product data by active", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedFindByActive(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationProductDeleteAt(res)
+
+	logSuccess("Successfully retrieve product data by active", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -329,19 +417,27 @@ func (h *productHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve product data"
 // @Router /api/product/trashed [get]
 func (h *productHandleApi) FindByTrashed(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllProductRequest{
 		Page:     int32(page),
@@ -352,11 +448,14 @@ func (h *productHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.client.FindByTrashed(ctx, req)
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve product data", zap.Error(err))
+		logError("Failed to retrieve product data by trashed", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedFindByTrashed(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationProductDeleteAt(res)
+
+	logSuccess("Successfully retrieve product data by trashed", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -384,12 +483,22 @@ func (h *productHandleApi) FindByTrashed(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to create product"
 // @Router /api/product/create [post]
 func (h *productHandleApi) Create(c echo.Context) error {
+	const method = "Create"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	formData, err := h.parseProductForm(c, true)
+
 	if err != nil {
+		logError("Product creation failed", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedCreate(c)
 	}
 
-	ctx := c.Request().Context()
 	req := &pb.CreateProductRequest{
 		MerchantId:   int32(formData.MerchantID),
 		CategoryId:   int32(formData.CategoryID),
@@ -406,18 +515,17 @@ func (h *productHandleApi) Create(c echo.Context) error {
 	if err != nil {
 		if formData.ImagePath != "" {
 			h.upload_image.CleanupImageOnFailure(formData.ImagePath)
-
 		}
 
-		h.logger.Error("Product creation failed",
-			zap.Error(err),
-			zap.Any("request", req),
-		)
+		logError("Product creation failed", err, zap.Error(err))
 
 		return product_errors.ErrApiProductFailedCreate(c)
 	}
 
 	so := h.mapping.ToApiResponseProduct(res)
+
+	logSuccess("Successfully created product", zap.Bool("success", true))
+
 	return c.JSON(http.StatusCreated, so)
 }
 
@@ -445,17 +553,30 @@ func (h *productHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to create product"
 // @Router /api/product/update/{id} [post]
 func (h *productHandleApi) Update(c echo.Context) error {
+	const method = "Update"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	productID, err := strconv.Atoi(c.Param("id"))
+
 	if err != nil {
+		logError("Product update failed", err, zap.Error(err))
+
 		return product_errors.ErrApiProductInvalidId(c)
 	}
 
 	formData, err := h.parseProductForm(c, false)
+
 	if err != nil {
+		logError("Product update failed", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedUpdate(c)
 	}
 
-	ctx := c.Request().Context()
 	req := &pb.UpdateProductRequest{
 		ProductId:    int32(productID),
 		MerchantId:   int32(formData.MerchantID),
@@ -475,15 +596,15 @@ func (h *productHandleApi) Update(c echo.Context) error {
 			h.upload_image.CleanupImageOnFailure(formData.ImagePath)
 		}
 
-		h.logger.Error("Product update failed",
-			zap.Error(err),
-			zap.Any("request", req),
-		)
+		logError("Product update failed", err, zap.Error(err))
 
 		return product_errors.ErrApiProductFailedUpdate(c)
 	}
 
 	so := h.mapping.ToApiResponseProduct(res)
+
+	logSuccess("Successfully updated product", zap.Bool("success", true))
+
 	return c.JSON(http.StatusOK, so)
 }
 
@@ -500,14 +621,21 @@ func (h *productHandleApi) Update(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve trashed product"
 // @Router /api/product/trashed/{id} [get]
 func (h *productHandleApi) TrashedProduct(c echo.Context) error {
+	const method = "TrashedProduct"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid product ID format", zap.Error(err))
+		logError("Failed to parse product id", err, zap.Error(err))
+
 		return product_errors.ErrApiProductInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdProductRequest{
 		Id: int32(id),
@@ -516,11 +644,14 @@ func (h *productHandleApi) TrashedProduct(c echo.Context) error {
 	res, err := h.client.TrashedProduct(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to archive product", zap.Error(err))
+		logError("Failed to retrieve trashed product", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedFindByActive(c)
 	}
 
 	so := h.mapping.ToApiResponsesProductDeleteAt(res)
+
+	logSuccess("Successfully retrieved trashed product", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -538,14 +669,21 @@ func (h *productHandleApi) TrashedProduct(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore product"
 // @Router /api/product/restore/{id} [post]
 func (h *productHandleApi) RestoreProduct(c echo.Context) error {
+	const method = "RestoreProduct"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid product ID format", zap.Error(err))
+		logError("Failed to parse product id", err, zap.Error(err))
+
 		return product_errors.ErrApiProductInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdProductRequest{
 		Id: int32(id),
@@ -554,11 +692,14 @@ func (h *productHandleApi) RestoreProduct(c echo.Context) error {
 	res, err := h.client.RestoreProduct(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to restore product", zap.Error(err))
+		logError("Failed to restore product", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedRestore(c)
 	}
 
 	so := h.mapping.ToApiResponsesProductDeleteAt(res)
+
+	logSuccess("Successfully restored product", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -576,14 +717,21 @@ func (h *productHandleApi) RestoreProduct(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete product:"
 // @Router /api/product/delete/{id} [delete]
 func (h *productHandleApi) DeleteProductPermanent(c echo.Context) error {
+	const method = "DeleteProductPermanent"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid product ID format", zap.Error(err))
+		logError("Failed to parse product id", err, zap.Error(err))
+
 		return product_errors.ErrApiProductInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.FindByIdProductRequest{
 		Id: int32(id),
@@ -592,11 +740,14 @@ func (h *productHandleApi) DeleteProductPermanent(c echo.Context) error {
 	res, err := h.client.DeleteProductPermanent(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to permanently delete product", zap.Error(err))
+		logError("Failed to delete product", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedDeletePermanent(c)
 	}
 
 	so := h.mapping.ToApiResponseProductDelete(res)
+
+	logSuccess("Successfully deleted product record permanently", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -612,18 +763,25 @@ func (h *productHandleApi) DeleteProductPermanent(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore all products"
 // @Router /api/product/restore/all [post]
 func (h *productHandleApi) RestoreAllProduct(c echo.Context) error {
+	const method = "RestoreAllProduct"
+
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
 
 	res, err := h.client.RestoreAllProduct(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		h.logger.Error("Bulk products restoration failed", zap.Error(err))
+		logError("Failed to restore all products", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedRestoreAll(c)
 	}
 
 	so := h.mapping.ToApiResponseProductAll(res)
 
-	h.logger.Debug("Successfully restored all products")
+	logSuccess("Successfully restored all products", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -639,18 +797,25 @@ func (h *productHandleApi) RestoreAllProduct(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete all products"
 // @Router /api/product/delete/all [post]
 func (h *productHandleApi) DeleteAllProductPermanent(c echo.Context) error {
+	const method = "DeleteAllProductPermanent"
+
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
 
 	res, err := h.client.DeleteAllProductPermanent(ctx, &emptypb.Empty{})
 
 	if err != nil {
-		h.logger.Error("Bulk products deletion failed", zap.Error(err))
+		logError("Failed to delete all products", err, zap.Error(err))
+
 		return product_errors.ErrApiProductFailedDeleteAllPermanent(c)
 	}
 
 	so := h.mapping.ToApiResponseProductAll(res)
 
-	h.logger.Debug("Successfully deleted all products permanently")
+	logSuccess("Successfully deleted all product records permanently", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -737,4 +902,58 @@ func (h *productHandleApi) parseProductForm(c echo.Context, requireImage bool) (
 
 	formData.ImagePath = imagePath
 	return formData, nil
+}
+
+func (s *productHandleApi) startTracingAndLogging(
+	ctx context.Context,
+	method string,
+	attrs ...attribute.KeyValue,
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
+	start := time.Now()
+	_, span := s.trace.Start(ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+	s.logger.Debug("Start: " + method)
+
+	status := "success"
+
+	end = func() {
+		s.recordMetrics(method, status, start)
+		code := otelcode.Ok
+		if status != "success" {
+			code = otelcode.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
+		span.RecordError(err)
+		span.SetStatus(otelcode.Error, msg)
+		span.AddEvent(msg)
+		allFields := append([]zap.Field{zap.Error(err)}, fields...)
+		s.logger.Error(msg, allFields...)
+	}
+
+	return end, logSuccess, logError
+}
+
+func (s *productHandleApi) recordMetrics(method string, status string, start time.Time) {
+	s.requestCounter.WithLabelValues(method, status).Inc()
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

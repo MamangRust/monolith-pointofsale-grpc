@@ -24,7 +24,7 @@ type cashierHandleGrpc struct {
 }
 
 func NewCashierHandleGrpc(
-	service service.Service,
+	service *service.Service,
 ) *cashierHandleGrpc {
 	return &cashierHandleGrpc{
 		cashierQuery:           service.CashierQuery,

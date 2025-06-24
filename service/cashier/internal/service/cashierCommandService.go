@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/MamangRust/monolith-point-of-sale-cashier/internal/errorhandler"
+	mencache "github.com/MamangRust/monolith-point-of-sale-cashier/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-cashier/internal/repository"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	traceunic "github.com/MamangRust/monolith-point-of-sale-pkg/trace_unic"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/cashier_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/merchant_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/user_errors"
 	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
@@ -23,6 +23,8 @@ import (
 
 type cashierCommandService struct {
 	ctx             context.Context
+	mencache        mencache.CashierCommandCache
+	errorHandler    errorhandler.CashierCommadError
 	trace           trace.Tracer
 	merchantQuery   repository.MerchantQueryRepository
 	userQuery       repository.UserQueryRepository
@@ -33,7 +35,10 @@ type cashierCommandService struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewCashierCommandService(ctx context.Context, merchantQuery repository.MerchantQueryRepository,
+func NewCashierCommandService(ctx context.Context,
+	mencache mencache.CashierCommandCache,
+	errorHandler errorhandler.CashierCommadError,
+	merchantQuery repository.MerchantQueryRepository,
 	userQuery repository.UserQueryRepository, cashierCommand repository.CashierCommandRepository,
 	mapping response_service.CashierResponseMapper, logger logger.LoggerInterface,
 ) *cashierCommandService {
@@ -59,6 +64,8 @@ func NewCashierCommandService(ctx context.Context, merchantQuery repository.Merc
 
 	return &cashierCommandService{
 		ctx:             ctx,
+		mencache:        mencache,
+		errorHandler:    errorHandler,
 		trace:           otel.Tracer("cashier-command-service"),
 		merchantQuery:   merchantQuery,
 		userQuery:       userQuery,
@@ -71,335 +78,202 @@ func NewCashierCommandService(ctx context.Context, merchantQuery repository.Merc
 }
 
 func (s *cashierCommandService) CreateCashier(req *requests.CreateCashierRequest) (*response.CashierResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "CreateCashier"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
+
 	defer func() {
-		s.recordMetrics("CreateCashier", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "CreateCashier")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("merchant.id", req.MerchantID),
-		attribute.Int("user.id", req.UserID),
-	)
-
-	s.logger.Debug("Creating new cashier")
 
 	_, err := s.merchantQuery.FindById(req.MerchantID)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_MERCHANT")
-		status = "failed_find_merchant"
-
-		s.logger.Error("Failed to retrieve merchant details",
-			zap.Error(err),
-			zap.Int("merchant_id", req.MerchantID),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "merchant_not_found"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Merchant not found")
-
-		return nil, merchant_errors.ErrFailedFindMerchantById
+		return errorhandler.HandleRepositorySingleError[*response.CashierResponse](s.logger, err, method, "FAILED_FIND_MERCHANT", span, &status, merchant_errors.ErrFailedFindMerchantById, zap.Error(err))
 	}
 
 	_, err = s.userQuery.FindById(req.UserID)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_FIND_USER")
-		status = "failed_find_user"
-
-		s.logger.Error("Failed to retrieve user details",
-			zap.Error(err),
-			zap.Int("user_id", req.UserID),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "user_not_found"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "User not found")
-
-		return nil, user_errors.ErrFailedFindUserByID
+		return errorhandler.HandleRepositorySingleError[*response.CashierResponse](s.logger, err, method, "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Error(err))
 	}
 
 	cashier, err := s.cashierCommand.CreateCashier(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_CREATE_CASHIER")
-		status = "failed_create_cashier"
-
-		s.logger.Error("Failed to create new cashier",
-			zap.Error(err),
-			zap.Any("request", req),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "create_cashier_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to create cashier")
-
-		return nil, cashier_errors.ErrFailedCreateCashier
+		return s.errorHandler.HandleCreateCashierError(err, method, "FAILED_CREATE_CASHIER", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.Int("cashier.id", cashier.ID),
-		attribute.String("cashier.name", cashier.Name),
-	)
+	so := s.mapping.ToCashierResponse(cashier)
 
-	return s.mapping.ToCashierResponse(cashier), nil
+	logSuccess("Successfully created cashier", zap.Bool("success", true))
+
+	return so, nil
 }
 
 func (s *cashierCommandService) UpdateCashier(req *requests.UpdateCashierRequest) (*response.CashierResponse, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "UpdateCashier"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
+
 	defer func() {
-		s.recordMetrics("UpdateCashier", status, startTime)
+		end(status)
 	}()
-
-	_, span := s.trace.Start(s.ctx, "UpdateCashier")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("cashier.id", *req.CashierID),
-	)
-
-	s.logger.Debug("Updating cashier",
-		zap.Int("cashier_id", *req.CashierID))
 
 	cashier, err := s.cashierCommand.UpdateCashier(req)
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_UPDATE_CASHIER")
-		status = "failed_update_cashier"
-
-		s.logger.Error("Failed to update cashier",
-			zap.Error(err),
-			zap.Int("cashier_id", *req.CashierID),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "update_cashier_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to update cashier")
-
-		return nil, cashier_errors.ErrFailedUpdateCashier
+		return s.errorHandler.HandleUpdateCashierError(err, method, "FAILED_UPDATE_CASHIER", span, &status, zap.Error(err))
 	}
 
 	span.SetAttributes(
 		attribute.String("cashier.name", cashier.Name),
 	)
 
-	return s.mapping.ToCashierResponse(cashier), nil
+	so := s.mapping.ToCashierResponse(cashier)
+
+	s.mencache.DeleteCashierCache(cashier.ID)
+
+	logSuccess("Successfully updated cashier", zap.Bool("success", true))
+
+	return so, nil
 }
 
 func (s *cashierCommandService) TrashedCashier(cashierID int) (*response.CashierResponseDeleteAt, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "TrashedCashier"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
+
 	defer func() {
-		s.recordMetrics("TrashedCashier", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "TrashedCashier")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("cashier.id", cashierID),
-	)
-
-	s.logger.Debug("Trashing cashier",
-		zap.Int("cashierID", cashierID))
-
 	cashier, err := s.cashierCommand.TrashedCashier(cashierID)
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_TRASH_CASHIER")
-		status = "failed_trash_cashier"
-
-		s.logger.Error("Failed to move cashier to trash",
-			zap.Error(err),
-			zap.Int("cashier_id", cashierID),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "trash_cashier_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to trash cashier")
-
-		return nil, cashier_errors.ErrFailedTrashedCashier
+		return s.errorHandler.HandleTrashedCashierError(err, method, "FAILED_TRASHED_CASHIER", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.String("cashier.deleted_at", *cashier.DeletedAt),
-	)
-	return s.mapping.ToCashierResponseDeleteAt(cashier), nil
+	so := s.mapping.ToCashierResponseDeleteAt(cashier)
+
+	logSuccess("Successfully trashed cashier", zap.Bool("success", true))
+
+	return so, nil
 }
 
 func (s *cashierCommandService) RestoreCashier(cashierID int) (*response.CashierResponseDeleteAt, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "RestoreCashier"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
+
 	defer func() {
-		s.recordMetrics("RestoreCashier", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "RestoreCashier")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("cashier.id", cashierID),
-	)
-
-	s.logger.Debug("Restoring cashier",
-		zap.Int("cashierID", cashierID))
-
 	cashier, err := s.cashierCommand.RestoreCashier(cashierID)
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_CASHIER")
-		status = "failed_restore_cashier"
-
-		s.logger.Error("Failed to restore cashier from trash",
-			zap.Error(err),
-			zap.Int("cashier_id", cashierID),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "restore_cashier_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore cashier")
-
-		return nil, cashier_errors.ErrFailedRestoreCashier
+		return s.errorHandler.HandleRestoreCashierError(err, method, "FAILED_RESTORE_CASHIER", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.Bool("cashier.restored", true),
-	)
-	return s.mapping.ToCashierResponseDeleteAt(cashier), nil
+	so := s.mapping.ToCashierResponseDeleteAt(cashier)
+
+	logSuccess("Successfully restored cashier", zap.Bool("success", true))
+
+	return so, nil
 }
 
 func (s *cashierCommandService) DeleteCashierPermanent(cashierID int) (bool, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "DeleteCashierPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
+
 	defer func() {
-		s.recordMetrics("DeleteCashierPermanent", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "DeleteCashierPermanent")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.Int("cashier.id", cashierID),
-	)
-
-	s.logger.Debug("Permanently deleting cashier",
-		zap.Int("cashierID", cashierID))
-
 	success, err := s.cashierCommand.DeleteCashierPermanent(cashierID)
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_CASHIER")
-		status = "failed_delete_cashier"
-
-		s.logger.Error("Failed to permanently delete cashier",
-			zap.Error(err),
-			zap.Int("cashier_id", cashierID),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "delete_cashier_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to delete cashier")
-
-		return false, cashier_errors.ErrFailedDeleteCashierPermanent
+		return s.errorHandler.HandleDeleteCashierPermanentError(err, method, "FAILED_DELETE_CASHIER_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.Bool("operation.success", success),
-	)
+	logSuccess("Successfully deleted cashier permanently", zap.Bool("success", success))
+
 	return success, nil
 }
 
 func (s *cashierCommandService) RestoreAllCashier() (bool, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "RestoreAllCashier"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
+
 	defer func() {
-		s.recordMetrics("RestoreAllCashier", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "RestoreAllCashier")
-	defer span.End()
-
-	s.logger.Debug("Restoring all trashed cashiers")
-
 	success, err := s.cashierCommand.RestoreAllCashier()
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_RESTORE_ALL_CASHIERS")
-		status = "failed_restore_all_cashiers"
-
-		s.logger.Error("Failed to restore all trashed cashiers",
-			zap.Error(err),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "restore_all_cashiers_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to restore all cashiers")
-
-		return false, cashier_errors.ErrFailedRestoreAllCashiers
+		return s.errorHandler.HandleRestoreAllCashierError(err, method, "FAILED_RESTORE_ALL_CASHIERS", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.Bool("operation.success", success),
-	)
+	logSuccess("Successfully restored all trashed cashiers", zap.Bool("success", success))
+
 	return success, nil
 }
 
 func (s *cashierCommandService) DeleteAllCashierPermanent() (bool, *response.ErrorResponse) {
-	startTime := time.Now()
-	status := "success"
+	const method = "DeleteAllCashierPermanent"
+
+	span, end, status, logSuccess := s.startTracingAndLogging(method)
+
 	defer func() {
-		s.recordMetrics("DeleteAllCashierPermanent", status, startTime)
+		end(status)
 	}()
 
-	_, span := s.trace.Start(s.ctx, "DeleteAllCashierPermanent")
-	defer span.End()
-
-	s.logger.Debug("Permanently deleting all cashiers")
-
 	success, err := s.cashierCommand.DeleteAllCashierPermanent()
+
 	if err != nil {
-		traceID := traceunic.GenerateTraceID("FAILED_DELETE_ALL_CASHIERS")
-		status = "failed_delete_all_cashiers"
-
-		s.logger.Error("Failed to permanently delete all trashed cashiers",
-			zap.Error(err),
-			zap.String("traceID", traceID))
-
-		span.SetAttributes(
-			attribute.String("error.trace_id", traceID),
-			attribute.String("error.type", "delete_all_cashiers_failed"),
-		)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "Failed to delete all cashiers")
-
-		return false, cashier_errors.ErrFailedDeleteAllCashierPermanent
+		return s.errorHandler.HandleDeleteAllCashierPermanentError(err, method, "FAILED_DELETE_ALL_CASHIERS_PERMANENT", span, &status, zap.Error(err))
 	}
 
-	span.SetAttributes(
-		attribute.Bool("operation.success", success),
-	)
+	logSuccess("Successfully deleted all trashed cashiers", zap.Bool("success", success))
+
 	return success, nil
+}
+
+func (s *cashierCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+	trace.Span,
+	func(string),
+	string,
+	func(string, ...zap.Field),
+) {
+	start := time.Now()
+	status := "success"
+
+	_, span := s.trace.Start(s.ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+
+	s.logger.Info("Start: " + method)
+
+	end := func(status string) {
+		s.recordMetrics(method, status, start)
+		code := codes.Ok
+		if status != "success" {
+			code = codes.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess := func(msg string, fields ...zap.Field) {
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	return span, end, status, logSuccess
 }
 
 func (s *cashierCommandService) recordMetrics(method string, status string, start time.Time) {

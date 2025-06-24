@@ -35,6 +35,8 @@ type CategoryQueryRepository interface {
 	FindByNameAndId(req *requests.CategoryNameAndId) (*record.CategoriesRecord, error)
 	FindByName(name string) (*record.CategoriesRecord, error)
 
+	FindByIdTrashed(category_id int) (*record.CategoriesRecord, error)
+
 	FindByActive(req *requests.FindAllCategory) ([]*record.CategoriesRecord, *int, error)
 	FindByTrashed(req *requests.FindAllCategory) ([]*record.CategoriesRecord, *int, error)
 }

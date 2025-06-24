@@ -1,0 +1,14 @@
+{"level":"debug","ts":"2025-06-24T00:36:41.994Z","caller":"apps/client.go:138","msg":"Loading environment variables"}
+{"level":"debug","ts":"2025-06-24T00:36:41.995Z","caller":"apps/client.go:143","msg":"Creating gRPC connections..."}
+{"level":"info","ts":"2025-06-24T00:36:41.995Z","caller":"apps/client.go:235","msg":"Connecting to Role service at role:50052"}
+{"level":"info","ts":"2025-06-24T00:36:41.995Z","caller":"apps/client.go:235","msg":"Connecting to Category service at category:50054"}
+{"level":"info","ts":"2025-06-24T00:36:41.996Z","caller":"apps/client.go:235","msg":"Connecting to OrderItem service at localhost:50056"}
+{"level":"info","ts":"2025-06-24T00:36:41.996Z","caller":"apps/client.go:235","msg":"Connecting to Product service at product:50059"}
+{"level":"info","ts":"2025-06-24T00:36:41.996Z","caller":"apps/client.go:235","msg":"Connecting to Auth service at auth:50051"}
+{"level":"info","ts":"2025-06-24T00:36:41.996Z","caller":"apps/client.go:235","msg":"Connecting to User service at user:50053"}
+{"level":"info","ts":"2025-06-24T00:36:41.996Z","caller":"apps/client.go:235","msg":"Connecting to Cashier service at user:50053"}
+{"level":"info","ts":"2025-06-24T00:36:41.996Z","caller":"apps/client.go:235","msg":"Connecting to Merchant service at merchant:50056"}
+{"level":"info","ts":"2025-06-24T00:36:41.996Z","caller":"apps/client.go:235","msg":"Connecting to Order service at order:50058"}
+{"level":"info","ts":"2025-06-24T00:36:41.997Z","caller":"apps/client.go:235","msg":"Connecting to Transaction service at transaction:50060"}
+{"level":"info","ts":"2025-06-24T00:36:41.998Z","caller":"apps/client.go:180","msg":"Starting API Gateway server on :5000"}
+{"level":"info","ts":"2025-06-24T00:36:41.998Z","caller":"apps/client.go:188","msg":"Starting Prometheus metrics server on :8091"}

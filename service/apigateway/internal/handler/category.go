@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
@@ -10,14 +12,22 @@ import (
 	response_api "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcode "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type categoryHandleApi struct {
-	client  pb.CategoryServiceClient
-	logger  logger.LoggerInterface
-	mapping response_api.CategoryResponseMapper
+	client          pb.CategoryServiceClient
+	logger          logger.LoggerInterface
+	mapping         response_api.CategoryResponseMapper
+	trace           trace.Tracer
+	requestCounter  *prometheus.CounterVec
+	requestDuration *prometheus.HistogramVec
 }
 
 func NewHandlerCategory(
@@ -26,10 +36,32 @@ func NewHandlerCategory(
 	logger logger.LoggerInterface,
 	mapping response_api.CategoryResponseMapper,
 ) *categoryHandleApi {
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "category_handler_requests_total",
+			Help: "Total number of category requests",
+		},
+		[]string{"method", "status"},
+	)
+
+	requestDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "category_handler_request_duration_seconds",
+			Help:    "Duration of category requests",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "status"},
+	)
+
+	prometheus.MustRegister(requestCounter)
+
 	categoryHandler := &categoryHandleApi{
-		client:  client,
-		logger:  logger,
-		mapping: mapping,
+		client:          client,
+		logger:          logger,
+		mapping:         mapping,
+		trace:           otel.Tracer("category-handler"),
+		requestCounter:  requestCounter,
+		requestDuration: requestDuration,
 	}
 
 	routercategory := router.Group("/api/category")
@@ -79,19 +111,27 @@ func NewHandlerCategory(
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve category data"
 // @Router /api/category [get]
 func (h *categoryHandleApi) FindAllCategory(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllCategory"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllCategoryRequest{
 		Page:     int32(page),
@@ -102,11 +142,15 @@ func (h *categoryHandleApi) FindAllCategory(c echo.Context) error {
 	res, err := h.client.FindAll(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to fetch categories", zap.Error(err))
+
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedFindAll(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationCategory(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -161,19 +205,27 @@ func (h *categoryHandleApi) FindById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve category data"
 // @Router /api/category/active [get]
 func (h *categoryHandleApi) FindByActive(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllCategoryRequest{
 		Page:     int32(page),
@@ -184,11 +236,14 @@ func (h *categoryHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.client.FindByActive(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to fetch active categories", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedFindByActive(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationCategoryDeleteAt(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -207,19 +262,27 @@ func (h *categoryHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve category data"
 // @Router /api/category/trashed [get]
 func (h *categoryHandleApi) FindByTrashed(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllCategoryRequest{
 		Page:     int32(page),
@@ -230,11 +293,14 @@ func (h *categoryHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.client.FindByTrashed(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to fetch archived categories", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedFindByTrashed(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationCategoryDeleteAt(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -253,27 +319,25 @@ func (h *categoryHandleApi) FindByTrashed(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/monthly-total-pricing [get]
 func (h *categoryHandleApi) FindMonthTotalPrice(c echo.Context) error {
-	yearStr := c.QueryParam("year")
+	const method = "FindMonthTotalPrice"
 
-	year, err := strconv.Atoi(yearStr)
+	ctx := c.Request().Context()
 
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
-
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	monthStr := c.QueryParam("month")
-
-	month, err := strconv.Atoi(monthStr)
-
+	month, err := parseQueryIntWithValidation(c, "month", 1, 12)
 	if err != nil {
-		h.logger.Debug("Invalid month parameter", zap.Error(err))
-
+		logError("Invalid month parameter", err, zap.String("month", c.QueryParam("month")))
 		return category_errors.ErrApiCategoryInvalidMonth(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindMonthlyTotalPrices(ctx, &pb.FindYearMonthTotalPrices{
 		Year:  int32(year),
@@ -281,12 +345,14 @@ func (h *categoryHandleApi) FindMonthTotalPrice(c echo.Context) error {
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve monthly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedMonthTotalPrice(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryMonthlyTotalPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -305,29 +371,33 @@ func (h *categoryHandleApi) FindMonthTotalPrice(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/yearly-total-pricing [get]
 func (h *categoryHandleApi) FindYearTotalPrice(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
-
-	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
-
-		return category_errors.ErrApiCategoryInvalidYear(c)
-	}
+	const method = "FindYearTotalPrice"
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
+	if err != nil {
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
+		return category_errors.ErrApiCategoryInvalidYear(c)
+	}
 
 	res, err := h.client.FindYearlyTotalPrices(ctx, &pb.FindYearTotalPrices{
 		Year: int32(year),
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve yearly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedYearTotalPrice(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryYearlyTotalPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -348,33 +418,32 @@ func (h *categoryHandleApi) FindYearTotalPrice(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/mycategory/monthly-total-pricing [get]
 func (h *categoryHandleApi) FindMonthTotalPriceById(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	const method = "FindMonthTotalPriceById"
 
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	monthStr := c.QueryParam("month")
-
-	month, err := strconv.Atoi(monthStr)
-
+	month, err := parseQueryIntWithValidation(c, "month", 1, 12)
 	if err != nil {
-		h.logger.Debug("Invalid month parameter", zap.Error(err))
+		logError("Invalid month parameter", err, zap.String("month", c.QueryParam("month")))
 		return category_errors.ErrApiCategoryInvalidMonth(c)
 	}
 
-	categoryStr := c.QueryParam("category_id")
-
-	category, err := strconv.Atoi(categoryStr)
+	category, err := parseQueryIntWithValidation(c, "category_id", 1, 9999)
 
 	if err != nil {
-		h.logger.Debug("Invalid category id parameter", zap.Error(err))
+		logError("Invalid category_id parameter", err, zap.String("category_id", c.QueryParam("category_id")))
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindMonthlyTotalPricesById(ctx, &pb.FindYearMonthTotalPriceById{
 		Year:       int32(year),
@@ -383,12 +452,14 @@ func (h *categoryHandleApi) FindMonthTotalPriceById(c echo.Context) error {
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve monthly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedMonthTotalPriceById(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryMonthlyTotalPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -408,26 +479,26 @@ func (h *categoryHandleApi) FindMonthTotalPriceById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/yearly-total-pricing [get]
 func (h *categoryHandleApi) FindYearTotalPriceById(c echo.Context) error {
-	yearStr := c.QueryParam("year")
+	const method = "FindYearTotalPriceById"
 
-	year, err := strconv.Atoi(yearStr)
+	ctx := c.Request().Context()
 
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	categoryStr := c.QueryParam("category_id")
-
-	category, err := strconv.Atoi(categoryStr)
+	category, err := parseQueryIntWithValidation(c, "category_id", 1, 9999)
 
 	if err != nil {
-		h.logger.Debug("Invalid category id parameter", zap.Error(err))
-
+		logError("Invalid category_id parameter", err, zap.String("category_id", c.QueryParam("category_id")))
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindYearlyTotalPricesById(ctx, &pb.FindYearTotalPriceById{
 		Year:       int32(year),
@@ -435,12 +506,14 @@ func (h *categoryHandleApi) FindYearTotalPriceById(c echo.Context) error {
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve yearly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedYearTotalPriceById(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryYearlyTotalPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -461,33 +534,32 @@ func (h *categoryHandleApi) FindYearTotalPriceById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/merchant/monthly-total-pricing [get]
 func (h *categoryHandleApi) FindMonthTotalPriceByMerchant(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	const method = "FindMonthTotalPriceByMerchant"
 
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	monthStr := c.QueryParam("month")
-
-	month, err := strconv.Atoi(monthStr)
-
+	month, err := parseQueryIntWithValidation(c, "month", 1, 12)
 	if err != nil {
-		h.logger.Debug("Invalid month parameter", zap.Error(err))
+		logError("Invalid month parameter", err, zap.String("month", c.QueryParam("month")))
 		return category_errors.ErrApiCategoryInvalidMonth(c)
 	}
 
-	merchantStr := c.QueryParam("merchant_id")
-
-	merchant, err := strconv.Atoi(merchantStr)
+	merchant, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
 
 	if err != nil {
-		h.logger.Debug("Invalid merchant id parameter", zap.Error(err))
-		return category_errors.ErrApiCategoryInvalidMerchantId(c)
+		logError("Invalid merchant_id parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
+		return category_errors.ErrApiCategoryInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindMonthlyTotalPricesByMerchant(ctx, &pb.FindYearMonthTotalPriceByMerchant{
 		Year:       int32(year),
@@ -496,12 +568,14 @@ func (h *categoryHandleApi) FindMonthTotalPriceByMerchant(c echo.Context) error 
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve monthly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedMonthTotalPriceByMerchant(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryMonthlyTotalPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -521,26 +595,26 @@ func (h *categoryHandleApi) FindMonthTotalPriceByMerchant(c echo.Context) error 
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/merchant/yearly-total-pricing [get]
 func (h *categoryHandleApi) FindYearTotalPriceByMerchant(c echo.Context) error {
-	yearStr := c.QueryParam("year")
+	const method = "FindYearTotalPriceByMerchant"
 
-	year, err := strconv.Atoi(yearStr)
+	ctx := c.Request().Context()
 
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	merchantStr := c.QueryParam("merchant_id")
-
-	merchant, err := strconv.Atoi(merchantStr)
+	merchant, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
 
 	if err != nil {
-		h.logger.Debug("Invalid merchant id parameter", zap.Error(err))
-
-		return category_errors.ErrApiCategoryInvalidMerchantId(c)
+		logError("Invalid merchant_id parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
+		return category_errors.ErrApiCategoryInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindYearlyTotalPricesByMerchant(ctx, &pb.FindYearTotalPriceByMerchant{
 		Year:       int32(year),
@@ -548,12 +622,14 @@ func (h *categoryHandleApi) FindYearTotalPriceByMerchant(c echo.Context) error {
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve yearly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedYearTotalPriceByMerchant(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryYearlyTotalPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -572,27 +648,33 @@ func (h *categoryHandleApi) FindYearTotalPriceByMerchant(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/monthly-pricing [get]
 func (h *categoryHandleApi) FindMonthPrice(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-
-	year, err := strconv.Atoi(yearStr)
-
-	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
-		return category_errors.ErrApiCategoryInvalidYear(c)
-	}
+	const method = "FindMonthPrice"
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
+	if err != nil {
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
+		return category_errors.ErrApiCategoryInvalidYear(c)
+	}
 
 	res, err := h.client.FindMonthPrice(ctx, &pb.FindYearCategory{
 		Year: int32(year),
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve monthly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedMonthPrice(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryMonthlyPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -611,24 +693,33 @@ func (h *categoryHandleApi) FindMonthPrice(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/yearly-pricing [get]
 func (h *categoryHandleApi) FindYearPrice(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
-	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
-		return category_errors.ErrApiCategoryInvalidYear(c)
-	}
+	const method = "FindYearPrice"
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
+
+	if err != nil {
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
+		return category_errors.ErrApiCategoryInvalidYear(c)
+	}
 
 	res, err := h.client.FindYearPrice(ctx, &pb.FindYearCategory{
 		Year: int32(year),
 	})
+
 	if err != nil {
-		h.logger.Debug("Failed to retrieve yearly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
 		return category_errors.ErrApiCategoryFailedYearPrice(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryYearlyPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -649,34 +740,40 @@ func (h *categoryHandleApi) FindYearPrice(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/merchant/monthly-pricing [get]
 func (h *categoryHandleApi) FindMonthPriceByMerchant(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-	merchantIdStr := c.QueryParam("merchant_id")
+	const method = "FindMonthPriceByMerchant"
 
-	year, err := strconv.Atoi(yearStr)
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	merchant_id, err := strconv.Atoi(merchantIdStr)
-
+	merchant_id, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid merchant id parameter", zap.Error(err))
+		logError("Invalid merchant ID parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
 		return category_errors.ErrApiCategoryInvalidMerchantId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindMonthPriceByMerchant(ctx, &pb.FindYearCategoryByMerchant{
 		Year:       int32(year),
 		MerchantId: int32(merchant_id),
 	})
+
 	if err != nil {
-		h.logger.Debug("Failed to retrieve monthly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedMonthPriceByMerchant(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryMonthlyPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -697,35 +794,40 @@ func (h *categoryHandleApi) FindMonthPriceByMerchant(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/merchant/yearly-pricing [get]
 func (h *categoryHandleApi) FindYearPriceByMerchant(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	const method = "FindYearPriceByMerchant"
 
-	merchantIdStr := c.QueryParam("merchant_id")
+	ctx := c.Request().Context()
 
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	merchant_id, err := strconv.Atoi(merchantIdStr)
-
+	merchant_id, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid merchant id parameter", zap.Error(err))
+		logError("Invalid merchant ID parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
 		return category_errors.ErrApiCategoryInvalidMerchantId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindYearPriceByMerchant(ctx, &pb.FindYearCategoryByMerchant{
 		Year:       int32(year),
 		MerchantId: int32(merchant_id),
 	})
+
 	if err != nil {
-		h.logger.Debug("Failed to retrieve yearly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedYearPriceByMerchant(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryYearlyPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -746,23 +848,25 @@ func (h *categoryHandleApi) FindYearPriceByMerchant(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/mycategory/monthly-pricing [get]
 func (h *categoryHandleApi) FindMonthPriceById(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-	categoryIdStr := c.QueryParam("category_id")
+	const method = "FindMonthPriceById"
 
-	year, err := strconv.Atoi(yearStr)
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	category_id, err := strconv.Atoi(categoryIdStr)
-
+	category_id, err := parseQueryIntWithValidation(c, "category_id", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid category id parameter", zap.Error(err))
+		logError("Invalid category ID parameter", err, zap.String("category_id", c.Param("category_id")))
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindMonthPriceById(ctx, &pb.FindYearCategoryById{
 		Year:       int32(year),
@@ -770,11 +874,14 @@ func (h *categoryHandleApi) FindMonthPriceById(c echo.Context) error {
 	})
 
 	if err != nil {
-		h.logger.Debug("Failed to retrieve monthly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedMonthPriceById(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryMonthlyPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -795,35 +902,40 @@ func (h *categoryHandleApi) FindMonthPriceById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Internal server error"
 // @Router /api/category/mycategory/yearly-pricing [get]
 func (h *categoryHandleApi) FindYearPriceById(c echo.Context) error {
-	yearStr := c.QueryParam("year")
-	year, err := strconv.Atoi(yearStr)
+	const method = "FindYearPriceById"
 
-	categoryIdStr := c.QueryParam("category_id")
+	ctx := c.Request().Context()
 
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
+	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid year parameter", zap.Error(err))
+		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
 		return category_errors.ErrApiCategoryInvalidYear(c)
 	}
 
-	category_id, err := strconv.Atoi(categoryIdStr)
-
+	category_id, err := parseQueryIntWithValidation(c, "category_id", 1, 9999)
 	if err != nil {
-		h.logger.Debug("Invalid category id parameter", zap.Error(err))
+		logError("Invalid category ID parameter", err, zap.String("category_id", c.Param("category_id")))
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
-
-	ctx := c.Request().Context()
 
 	res, err := h.client.FindYearPriceById(ctx, &pb.FindYearCategoryById{
 		Year:       int32(year),
 		CategoryId: int32(category_id),
 	})
+
 	if err != nil {
-		h.logger.Debug("Failed to retrieve yearly category price", zap.Error(err))
+		logError("Failed to retrieve category data", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedYearPriceById(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryYearlyPrice(res)
+
+	logSuccess("Successfully retrieve category data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -841,38 +953,44 @@ func (h *categoryHandleApi) FindYearPriceById(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to create category"
 // @Router /api/category/create [post]
 func (h *categoryHandleApi) Create(c echo.Context) error {
+	const method = "Create"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	var body requests.CreateCategoryRequest
 
 	if err := c.Bind(&body); err != nil {
-		h.logger.Debug("Invalid request format", zap.Error(err))
+		logError("Failed to bind request body", err, zap.Error(err))
+
 		return category_errors.ErrApiBindCreateCategory(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		h.logger.Debug("Validation failed", zap.Error(err))
+		logError("Invalid request body", err, zap.Error(err))
+
 		return category_errors.ErrApiValidateCreateCategory(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.CreateCategoryRequest{
 		Name:        body.Name,
 		Description: body.Description,
 	}
 
-	h.logger.Debug("info", zap.Any("req", req))
-
 	res, err := h.client.Create(ctx, req)
+
 	if err != nil {
-		h.logger.Error("Category creation failed",
-			zap.Error(err),
-			zap.Any("request", req),
-		)
+		logError("Failed to create category", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedCreate(c)
 	}
 
 	so := h.mapping.ToApiResponseCategory(res)
+
+	logSuccess("Successfully created category", zap.Bool("success", true))
 
 	return c.JSON(http.StatusCreated, so)
 }
@@ -891,27 +1009,37 @@ func (h *categoryHandleApi) Create(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to update category"
 // @Router /api/category/update/{id} [post]
 func (h *categoryHandleApi) Update(c echo.Context) error {
+	const method = "Update"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id := c.Param("id")
 
 	idInt, err := strconv.Atoi(id)
 
 	if err != nil {
-		h.logger.Debug("Invalid id parameter", zap.Error(err))
+		logError("Invalid category ID parameter", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
 
 	var body requests.UpdateCategoryRequest
 
 	if err := c.Bind(&body); err != nil {
+		logError("Failed to bind request body", err, zap.Error(err))
+
 		return category_errors.ErrApiBindUpdateCategory(c)
 	}
 
 	if err := body.Validate(); err != nil {
-		h.logger.Debug("Validation failed", zap.Error(err))
+		logError("Invalid request body", err, zap.Error(err))
+
 		return category_errors.ErrApiValidateUpdateCategory(c)
 	}
-
-	ctx := c.Request().Context()
 
 	req := &pb.UpdateCategoryRequest{
 		CategoryId:  int32(idInt),
@@ -920,16 +1048,16 @@ func (h *categoryHandleApi) Update(c echo.Context) error {
 	}
 
 	res, err := h.client.Update(ctx, req)
+
 	if err != nil {
-		h.logger.Error("Category update failed",
-			zap.Error(err),
-			zap.Any("request", req),
-		)
+		logError("Failed to update category", err, zap.Error(err))
 
 		return category_errors.ErrApiCategoryFailedUpdate(c)
 	}
 
 	so := h.mapping.ToApiResponseCategory(res)
+
+	logSuccess("Successfully updated category", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -947,24 +1075,35 @@ func (h *categoryHandleApi) Update(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve trashed category"
 // @Router /api/category/trashed/{id} [get]
 func (h *categoryHandleApi) TrashedCategory(c echo.Context) error {
+	const method = "TrashedCategory"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid category ID format", zap.Error(err))
+		logError("Failed to parse category id", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
 
-	ctx := c.Request().Context()
 	req := &pb.FindByIdCategoryRequest{Id: int32(id)}
 
 	res, err := h.client.TrashedCategory(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to archive category", zap.Error(err))
+		logError("Failed to retrieve trashed category", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedTrashed(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryDeleteAt(res)
+
+	logSuccess("Successfully retrieved trashed category", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -982,22 +1121,35 @@ func (h *categoryHandleApi) TrashedCategory(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore category"
 // @Router /api/category/restore/{id} [post]
 func (h *categoryHandleApi) RestoreCategory(c echo.Context) error {
+	const method = "RestoreCategory"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id, err := strconv.Atoi(c.Param("id"))
+
 	if err != nil {
-		h.logger.Debug("Invalid category ID format", zap.Error(err))
+		logError("Failed to parse category id", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
 
-	ctx := c.Request().Context()
 	req := &pb.FindByIdCategoryRequest{Id: int32(id)}
 
 	res, err := h.client.RestoreCategory(ctx, req)
+
 	if err != nil {
-		h.logger.Error("Failed to restore category", zap.Error(err))
+		logError("Failed to restore category", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedRestore(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryDeleteAt(res)
+
+	logSuccess("Successfully restored category", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -1015,23 +1167,35 @@ func (h *categoryHandleApi) RestoreCategory(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete category:"
 // @Router /api/category/delete/{id} [delete]
 func (h *categoryHandleApi) DeleteCategoryPermanent(c echo.Context) error {
+	const method = "DeleteCategoryPermanent"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	id, err := strconv.Atoi(c.Param("id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid category ID format", zap.Error(err))
+		logError("Failed to parse category id", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryInvalidId(c)
 	}
 
-	ctx := c.Request().Context()
 	req := &pb.FindByIdCategoryRequest{Id: int32(id)}
 
 	res, err := h.client.DeleteCategoryPermanent(ctx, req)
+
 	if err != nil {
-		h.logger.Error("Failed to permanently delete category", zap.Error(err))
+		logError("Failed to delete category", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedDeletePermanent(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryDelete(res)
+
+	logSuccess("Successfully deleted category", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -1048,17 +1212,25 @@ func (h *categoryHandleApi) DeleteCategoryPermanent(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to restore category"
 // @Router /api/category/restore/all [post]
 func (h *categoryHandleApi) RestoreAllCategory(c echo.Context) error {
+	const method = "RestoreAllCategory"
+
 	ctx := c.Request().Context()
 
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	res, err := h.client.RestoreAllCategory(ctx, &emptypb.Empty{})
+
 	if err != nil {
-		h.logger.Error("Bulk category restoration failed", zap.Error(err))
+		logError("Failed to restore all category", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedRestoreAll(c)
 	}
 
 	so := h.mapping.ToApiResponseCategoryAll(res)
 
-	h.logger.Debug("Successfully restored all category")
+	logSuccess("Successfully restored all category", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -1076,15 +1248,79 @@ func (h *categoryHandleApi) RestoreAllCategory(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to delete category:"
 // @Router /api/category/delete/all [post]
 func (h *categoryHandleApi) DeleteAllCategoryPermanent(c echo.Context) error {
+	const method = "DeleteAllCategoryPermanent"
+
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	res, err := h.client.DeleteAllCategoryPermanent(ctx, &emptypb.Empty{})
+
 	if err != nil {
-		h.logger.Error("Bulk category deletion failed", zap.Error(err))
+		logError("Failed to delete all category", err, zap.Error(err))
+
 		return category_errors.ErrApiCategoryFailedDeleteAllPermanent(c)
 	}
 
-	h.logger.Debug("All categories permanently deleted")
-
 	so := h.mapping.ToApiResponseCategoryAll(res)
+
+	logSuccess("Successfully deleted all category", zap.Bool("success", true))
+
 	return c.JSON(http.StatusOK, so)
+}
+
+func (s *categoryHandleApi) startTracingAndLogging(
+	ctx context.Context,
+	method string,
+	attrs ...attribute.KeyValue,
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
+	start := time.Now()
+	_, span := s.trace.Start(ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+	s.logger.Debug("Start: " + method)
+
+	status := "success"
+
+	end = func() {
+		s.recordMetrics(method, status, start)
+		code := otelcode.Ok
+		if status != "success" {
+			code = otelcode.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
+		span.RecordError(err)
+		span.SetStatus(otelcode.Error, msg)
+		span.AddEvent(msg)
+		allFields := append([]zap.Field{zap.Error(err)}, fields...)
+		s.logger.Error(msg, allFields...)
+	}
+
+	return end, logSuccess, logError
+}
+
+func (s *categoryHandleApi) recordMetrics(method string, status string, start time.Time) {
+	s.requestCounter.WithLabelValues(method, status).Inc()
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

@@ -7,13 +7,15 @@ RUN go mod tidy && go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o merchant ./cmd/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o merchant ./cmd/main.go
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 
 WORKDIR /root/
-COPY --from=builder /app/merchant .
+RUN mkdir -p /var/log/app
 
-EXPOSE 50055 8086
+COPY --chmod=755 --from=builder /app/merchant .
+
+EXPOSE 50056 8086
 CMD ["./merchant"]

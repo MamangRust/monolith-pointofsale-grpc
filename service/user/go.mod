@@ -3,9 +3,10 @@ module github.com/MamangRust/monolith-point-of-sale-user
 go 1.23.4
 
 require (
-	github.com/MamangRust/monolith-point-of-sale-pkg v1.0.2
-	github.com/MamangRust/monolith-point-of-sale-shared v1.0.2
+	github.com/MamangRust/monolith-point-of-sale-pkg v1.0.5
+	github.com/MamangRust/monolith-point-of-sale-shared v1.0.6
 	github.com/prometheus/client_golang v1.22.0
+	github.com/redis/go-redis/v9 v9.10.0
 	github.com/spf13/viper v1.20.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
 	go.opentelemetry.io/otel v1.36.0
@@ -19,6 +20,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect

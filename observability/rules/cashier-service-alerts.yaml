@@ -1,0 +1,98 @@
+groups:
+  - name: cashier-service-alerts
+    rules:
+      - alert: CashierHighCommandErrorRate
+        expr: |
+          sum(rate(cashier_command_service_request_total{status="error"}[1m])) 
+          / 
+          sum(rate(cashier_command_service_request_total[1m])) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on cashier command service"
+          description: "More than 10% of cashier command requests are failing (current value: {{ $value }})."
+
+      - alert: CashierHighQueryErrorRate
+        expr: |
+          sum(rate(cashier_query_service_request_total{status="error"}[1m])) 
+          / 
+          sum(rate(cashier_query_service_request_total[1m])) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on cashier query service"
+          description: "More than 10% of cashier query requests are failing (current value: {{ $value }})."
+
+      - alert: CashierHighStatsErrorRate
+        expr: |
+          sum(rate(cashier_stats_service_request_total{status="error"}[1m])) 
+          / 
+          sum(rate(cashier_stats_service_request_total[1m])) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on cashier stats service"
+          description: "More than 10% of cashier stats requests are failing (current value: {{ $value }})."
+
+      - alert: CashierHighCommandLatency
+        expr: |
+          histogram_quantile(0.95, rate(cashier_command_service_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cashier command service latency is high"
+          description: "95th percentile latency > 1s for cashier command service (current: {{ $value }}s)."
+
+      - alert: CashierHighQueryLatency
+        expr: |
+          histogram_quantile(0.95, rate(cashier_query_service_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cashier query service latency is high"
+          description: "95th percentile latency > 1s for cashier query service (current: {{ $value }}s)."
+
+      - alert: CashierHighStatsLatency
+        expr: |
+          histogram_quantile(0.95, rate(cashier_stats_service_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cashier stats service latency is high"
+          description: "95th percentile latency > 1s for cashier stats service (current: {{ $value }}s)."
+
+      - alert: CashierNoCommandTraffic
+        expr: |
+          rate(cashier_command_service_request_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No traffic on cashier command service"
+          description: "No incoming traffic for cashier command service for 5 minutes."
+
+      - alert: CashierNoQueryTraffic
+        expr: |
+          rate(cashier_query_service_request_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No traffic on cashier query service"
+          description: "No incoming traffic for cashier query service for 5 minutes."
+
+      - alert: CashierNoStatsTraffic
+        expr: |
+          rate(cashier_stats_service_request_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No traffic on cashier stats service"
+          description: "No incoming traffic for cashier stats service for 5 minutes."

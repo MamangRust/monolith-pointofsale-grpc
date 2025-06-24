@@ -1,0 +1,38 @@
+{"level":"error","ts":"2025-06-23T18:24:43.977Z","caller":"database/database.go:49","msg":"Failed to ping database","error":"dial tcp [::1]:5432: connect: connection refused"}
+{"level":"fatal","ts":"2025-06-23T18:24:43.977Z","caller":"apps/server.go:66","msg":"Failed to connect to database","error":"failed to ping database: dial tcp [::1]:5432: connect: connection refused"}
+{"level":"error","ts":"2025-06-23T18:37:38.379Z","caller":"database/database.go:49","msg":"Failed to ping database","error":"dial tcp [::1]:5432: connect: connection refused"}
+{"level":"fatal","ts":"2025-06-23T18:37:38.380Z","caller":"apps/server.go:66","msg":"Failed to connect to database","error":"failed to ping database: dial tcp [::1]:5432: connect: connection refused"}
+{"level":"error","ts":"2025-06-23T19:09:24.634Z","caller":"database/database.go:49","msg":"Failed to ping database","error":"dial tcp [::1]:5432: connect: connection refused"}
+{"level":"fatal","ts":"2025-06-23T19:09:24.634Z","caller":"apps/server.go:66","msg":"Failed to connect to database","error":"failed to ping database: dial tcp [::1]:5432: connect: connection refused"}
+{"level":"debug","ts":"2025-06-23T21:54:38.176Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-23T21:54:38.183Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-23T21:54:38.183Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-23T21:54:38.183Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}
+{"level":"debug","ts":"2025-06-23T22:45:20.230Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-23T22:45:20.235Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-23T22:45:20.235Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-23T22:45:20.235Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}
+{"level":"debug","ts":"2025-06-23T23:43:52.913Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-23T23:43:52.916Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-23T23:43:52.916Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-23T23:43:52.916Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}
+{"level":"debug","ts":"2025-06-23T23:49:38.420Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-23T23:49:38.425Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-23T23:49:38.425Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-23T23:49:38.425Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}
+{"level":"debug","ts":"2025-06-23T23:58:39.489Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-23T23:58:39.492Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-23T23:58:39.492Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-23T23:58:39.492Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}
+{"level":"debug","ts":"2025-06-24T00:08:58.154Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T00:08:58.162Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-24T00:08:58.163Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-24T00:08:58.163Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}
+{"level":"debug","ts":"2025-06-24T00:20:35.224Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T00:20:35.227Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-24T00:20:35.228Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-24T00:20:35.228Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}
+{"level":"debug","ts":"2025-06-24T00:36:41.020Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-06-24T00:36:41.024Z","caller":"apps/server.go:162","msg":"Server running on port 50055"}
+{"level":"info","ts":"2025-06-24T00:36:41.024Z","caller":"apps/server.go:177","msg":"gRPC server listening on :50055"}
+{"level":"info","ts":"2025-06-24T00:36:41.024Z","caller":"apps/server.go:169","msg":"Metrics server listening on :8085"}

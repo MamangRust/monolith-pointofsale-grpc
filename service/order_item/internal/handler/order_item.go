@@ -20,11 +20,10 @@ type orderItemHandleGrpc struct {
 
 func NewOrderItemHandleGrpc(
 	orderItemService service.OrderItemQueryService,
-	mapping protomapper.OrderItemProtoMapper,
 ) *orderItemHandleGrpc {
 	return &orderItemHandleGrpc{
 		orderItemService: orderItemService,
-		mapping:          mapping,
+		mapping:          protomapper.NewOrderItemProtoMapper(),
 	}
 }
 

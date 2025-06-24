@@ -1,22 +1,31 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 	orderitem_errors "github.com/MamangRust/monolith-point-of-sale-shared/errors/order_item_errors"
 	response_api "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 	"github.com/labstack/echo/v4"
+	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otelcode "go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type orderItemHandleApi struct {
-	client  pb.OrderItemServiceClient
-	logger  logger.LoggerInterface
-	mapping response_api.OrderItemResponseMapper
+	client          pb.OrderItemServiceClient
+	logger          logger.LoggerInterface
+	mapping         response_api.OrderItemResponseMapper
+	trace           trace.Tracer
+	requestCounter  *prometheus.CounterVec
+	requestDuration *prometheus.HistogramVec
 }
 
 func NewHandlerOrderItem(
@@ -25,10 +34,32 @@ func NewHandlerOrderItem(
 	logger logger.LoggerInterface,
 	mapping response_api.OrderItemResponseMapper,
 ) *orderItemHandleApi {
+	requestCounter := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "order_item_handler_requests_total",
+			Help: "Total number of order item requests",
+		},
+		[]string{"method", "status"},
+	)
+
+	requestDuration := prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "order_item_handler_request_duration_seconds",
+			Help:    "Duration of order item requests",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"method", "status"},
+	)
+
+	prometheus.MustRegister(requestCounter)
+
 	categoryHandler := &orderItemHandleApi{
-		client:  client,
-		logger:  logger,
-		mapping: mapping,
+		client:          client,
+		logger:          logger,
+		mapping:         mapping,
+		trace:           otel.Tracer("order-item-handler"),
+		requestCounter:  requestCounter,
+		requestDuration: requestDuration,
 	}
 
 	routercategory := router.Group("/api/order-item")
@@ -54,19 +85,27 @@ func NewHandlerOrderItem(
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve order item data"
 // @Router /api/order-item [get]
 func (h *orderItemHandleApi) FindAllOrderItems(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindAllOrderItems"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllOrderItemRequest{
 		Page:     int32(page),
@@ -77,11 +116,14 @@ func (h *orderItemHandleApi) FindAllOrderItems(c echo.Context) error {
 	res, err := h.client.FindAll(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to fetch order-items", zap.Error(err))
+		logError("failed to retrieve order item data", err, zap.Error(err))
+
 		return orderitem_errors.ErrApiOrderItemFailedFindAll(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationOrderItem(res)
+
+	logSuccess("successfully retrieve order item data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -99,19 +141,27 @@ func (h *orderItemHandleApi) FindAllOrderItems(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve order item data"
 // @Router /api/order-item/active [get]
 func (h *orderItemHandleApi) FindByActive(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByActive"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllOrderItemRequest{
 		Page:     int32(page),
@@ -122,11 +172,14 @@ func (h *orderItemHandleApi) FindByActive(c echo.Context) error {
 	res, err := h.client.FindByActive(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to fetch active order-items", zap.Error(err))
+		logError("failed to retrieve order item data", err, zap.Error(err))
+
 		return orderitem_errors.ErrApiOrderItemFailedFindByActive(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationOrderItemDeleteAt(res)
+
+	logSuccess("successfully retrieve order item data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -144,19 +197,27 @@ func (h *orderItemHandleApi) FindByActive(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve order item data"
 // @Router /api/order-item/trashed [get]
 func (h *orderItemHandleApi) FindByTrashed(c echo.Context) error {
-	page, err := strconv.Atoi(c.QueryParam("page"))
-	if err != nil || page <= 0 {
-		page = 1
-	}
+	const (
+		defaultPage     = 1
+		defaultPageSize = 10
+		method          = "FindByTrashed"
+	)
 
-	pageSize, err := strconv.Atoi(c.QueryParam("page_size"))
-	if err != nil || pageSize <= 0 {
-		pageSize = 10
-	}
-
+	page := parseQueryInt(c, "page", defaultPage)
+	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
 	search := c.QueryParam("search")
 
 	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(
+		ctx,
+		method,
+		attribute.Int("page", page),
+		attribute.Int("page_size", pageSize),
+		attribute.String("search", search),
+	)
+
+	defer func() { end() }()
 
 	req := &pb.FindAllOrderItemRequest{
 		Page:     int32(page),
@@ -167,11 +228,14 @@ func (h *orderItemHandleApi) FindByTrashed(c echo.Context) error {
 	res, err := h.client.FindByTrashed(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to fetch archived order-items", zap.Error(err))
+		logError("failed to retrieve order item data", err, zap.Error(err))
+
 		return orderitem_errors.ErrApiOrderItemFailedFindByTrashed(c)
 	}
 
 	so := h.mapping.ToApiResponsePaginationOrderItemDeleteAt(res)
+
+	logSuccess("successfully retrieve order item data", zap.Bool("success", true))
 
 	return c.JSON(http.StatusOK, so)
 }
@@ -188,18 +252,21 @@ func (h *orderItemHandleApi) FindByTrashed(c echo.Context) error {
 // @Failure 500 {object} response.ErrorResponse "Failed to retrieve order item data"
 // @Router /api/order-item/order/{order_id} [get]
 func (h *orderItemHandleApi) FindOrderItemByOrder(c echo.Context) error {
+	const method = "FindOrderItemByOrder"
+
+	ctx := c.Request().Context()
+
+	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
+
+	defer func() { end() }()
+
 	orderID, err := strconv.Atoi(c.Param("order_id"))
 
 	if err != nil {
-		h.logger.Debug("Invalid order ID format", zap.Error(err))
-		return c.JSON(http.StatusBadRequest, response.ErrorResponse{
-			Status:  "invalid_input",
-			Message: "Please provide a valid order ID.",
-			Code:    http.StatusBadRequest,
-		})
-	}
+		logError("failed to retrieve order item data", err, zap.Error(err))
 
-	ctx := c.Request().Context()
+		return orderitem_errors.ErrApiOrderItemFailedFindByOrderId(c)
+	}
 
 	req := &pb.FindByIdOrderItemRequest{
 		Id: int32(orderID),
@@ -208,11 +275,67 @@ func (h *orderItemHandleApi) FindOrderItemByOrder(c echo.Context) error {
 	res, err := h.client.FindOrderItemByOrder(ctx, req)
 
 	if err != nil {
-		h.logger.Error("Failed to fetch order item details", zap.Error(err))
+		logError("failed to retrieve order item data", err, zap.Error(err))
+
 		return orderitem_errors.ErrApiOrderItemFailedFindByOrderId(c)
 	}
 
 	so := h.mapping.ToApiResponsesOrderItem(res)
 
+	logSuccess("successfully retrieve order item data", zap.Bool("success", true))
+
 	return c.JSON(http.StatusOK, so)
+}
+
+func (s *orderItemHandleApi) startTracingAndLogging(
+	ctx context.Context,
+	method string,
+	attrs ...attribute.KeyValue,
+) (
+	end func(),
+	logSuccess func(string, ...zap.Field),
+	logError func(string, error, ...zap.Field),
+) {
+	start := time.Now()
+	_, span := s.trace.Start(ctx, method)
+
+	if len(attrs) > 0 {
+		span.SetAttributes(attrs...)
+	}
+
+	span.AddEvent("Start: " + method)
+	s.logger.Debug("Start: " + method)
+
+	status := "success"
+
+	end = func() {
+		s.recordMetrics(method, status, start)
+		code := otelcode.Ok
+		if status != "success" {
+			code = otelcode.Error
+		}
+		span.SetStatus(code, status)
+		span.End()
+	}
+
+	logSuccess = func(msg string, fields ...zap.Field) {
+		status = "success"
+		span.AddEvent(msg)
+		s.logger.Debug(msg, fields...)
+	}
+
+	logError = func(msg string, err error, fields ...zap.Field) {
+		status = "error"
+		span.RecordError(err)
+		span.SetStatus(otelcode.Error, msg)
+		span.AddEvent(msg)
+		allFields := append([]zap.Field{zap.Error(err)}, fields...)
+		s.logger.Error(msg, allFields...)
+	}
+
+	return end, logSuccess, logError
+}
+func (s *orderItemHandleApi) recordMetrics(method string, status string, start time.Time) {
+	s.requestCounter.WithLabelValues(method, status).Inc()
+	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

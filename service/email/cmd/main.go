@@ -57,6 +57,7 @@ func main() {
 	err = myKafka.StartConsumers([]string{
 		"email-service-topic-auth-register",
 		"email-service-topic-auth-forgot-password",
+		"email-service-topic-auth-verify-code-success",
 		"email-service-topic-merchant-create",
 		"email-service-topic-merchant-update-status",
 		"email-service-topic-merchant-document-create",
