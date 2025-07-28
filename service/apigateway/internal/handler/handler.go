@@ -33,7 +33,7 @@ type Deps struct {
 	Logger             logger.LoggerInterface
 	Mapping            *response_api.ResponseApiMapper
 	ImageUpload        upload_image.ImageUploads
-	ServiceConnections ServiceConnections
+	ServiceConnections *ServiceConnections
 }
 
 func NewHandler(deps *Deps) {

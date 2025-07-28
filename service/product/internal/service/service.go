@@ -27,7 +27,7 @@ func NewService(deps *Deps) *Service {
 	mapper := response_service.NewProductResponseMapper()
 
 	return &Service{
-		ProductQuery:   NewProductQueryService(deps.Ctx, deps.ErrorHandler.ProductQueryError, deps.Mencache.ProductQuery, deps.Repositories.ProductQuery, mapper, deps.Logger),
-		ProductCommand: NewProductCommandService(deps.Ctx, deps.ErrorHandler.ProductCommandError, deps.Mencache.ProductCommand, deps.Repositories.CategoryQuery, deps.Repositories.MerchantQuery, deps.Repositories.ProductQuery, deps.Repositories.ProductCommand, mapper, deps.Logger),
+		ProductQuery:   NewProductQueryService(deps.ErrorHandler.ProductQueryError, deps.Mencache.ProductQuery, deps.Repositories.ProductQuery, mapper, deps.Logger),
+		ProductCommand: NewProductCommandService(deps.ErrorHandler.ProductCommandError, deps.Mencache.ProductCommand, deps.Repositories.CategoryQuery, deps.Repositories.MerchantQuery, deps.Repositories.ProductQuery, deps.Repositories.ProductCommand, mapper, deps.Logger),
 	}
 }

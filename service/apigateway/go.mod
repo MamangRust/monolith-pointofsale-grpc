@@ -3,7 +3,7 @@ module github.com/MamangRust/monolith-point-of-sale-apigateway
 go 1.23.4
 
 require (
-	github.com/MamangRust/monolith-point-of-sale-pkg v1.0.6
+	github.com/MamangRust/monolith-point-of-sale-pkg v1.0.7
 	github.com/MamangRust/monolith-point-of-sale-shared v1.0.8
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/labstack/echo-jwt/v4 v4.3.1
@@ -21,8 +21,6 @@ require (
 
 require (
 	github.com/KyleBanks/depth v1.2.1 // indirect
-	github.com/PuerkitoBio/purell v1.2.1 // indirect
-	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

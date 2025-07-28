@@ -14,19 +14,17 @@ import (
 
 type roleQueryRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.RoleRecordMapping
 }
 
-func NewRoleQueryRepository(db *db.Queries, ctx context.Context, mapping recordmapper.RoleRecordMapping) *roleQueryRepository {
+func NewRoleQueryRepository(db *db.Queries, mapping recordmapper.RoleRecordMapping) *roleQueryRepository {
 	return &roleQueryRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r *roleQueryRepository) FindAllRoles(req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error) {
+func (r *roleQueryRepository) FindAllRoles(ctx context.Context, req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetRolesParams{
@@ -35,7 +33,7 @@ func (r *roleQueryRepository) FindAllRoles(req *requests.FindAllRoles) ([]*recor
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetRoles(r.ctx, reqDb)
+	res, err := r.db.GetRoles(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch roles: invalid pagination (page %d, size %d) or search query '%s'", req.Page, req.PageSize, req.Search)
@@ -51,8 +49,8 @@ func (r *roleQueryRepository) FindAllRoles(req *requests.FindAllRoles) ([]*recor
 	return r.mapping.ToRolesRecordAll(res), &totalCount, nil
 }
 
-func (r *roleQueryRepository) FindById(id int) (*record.RoleRecord, error) {
-	res, err := r.db.GetRole(r.ctx, int32(id))
+func (r *roleQueryRepository) FindById(ctx context.Context, id int) (*record.RoleRecord, error) {
+	res, err := r.db.GetRole(ctx, int32(id))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -64,8 +62,8 @@ func (r *roleQueryRepository) FindById(id int) (*record.RoleRecord, error) {
 	return r.mapping.ToRoleRecord(res), nil
 }
 
-func (r *roleQueryRepository) FindByName(name string) (*record.RoleRecord, error) {
-	res, err := r.db.GetRoleByName(r.ctx, name)
+func (r *roleQueryRepository) FindByName(ctx context.Context, name string) (*record.RoleRecord, error) {
+	res, err := r.db.GetRoleByName(ctx, name)
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -77,8 +75,8 @@ func (r *roleQueryRepository) FindByName(name string) (*record.RoleRecord, error
 	return r.mapping.ToRoleRecord(res), nil
 }
 
-func (r *roleQueryRepository) FindByUserId(user_id int) ([]*record.RoleRecord, error) {
-	res, err := r.db.GetUserRoles(r.ctx, int32(user_id))
+func (r *roleQueryRepository) FindByUserId(ctx context.Context, user_id int) ([]*record.RoleRecord, error) {
+	res, err := r.db.GetUserRoles(ctx, int32(user_id))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -90,7 +88,7 @@ func (r *roleQueryRepository) FindByUserId(user_id int) ([]*record.RoleRecord, e
 	return r.mapping.ToRolesRecord(res), nil
 }
 
-func (r *roleQueryRepository) FindByActiveRole(req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error) {
+func (r *roleQueryRepository) FindByActiveRole(ctx context.Context, req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetActiveRolesParams{
@@ -99,7 +97,7 @@ func (r *roleQueryRepository) FindByActiveRole(req *requests.FindAllRoles) ([]*r
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetActiveRoles(r.ctx, reqDb)
+	res, err := r.db.GetActiveRoles(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch active roles: invalid parameters (page %d, size %d, search '%s')", req.Page, req.PageSize, req.Search)
@@ -115,7 +113,7 @@ func (r *roleQueryRepository) FindByActiveRole(req *requests.FindAllRoles) ([]*r
 	return r.mapping.ToRolesRecordActive(res), &totalCount, nil
 }
 
-func (r *roleQueryRepository) FindByTrashedRole(req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error) {
+func (r *roleQueryRepository) FindByTrashedRole(ctx context.Context, req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetTrashedRolesParams{
@@ -124,7 +122,7 @@ func (r *roleQueryRepository) FindByTrashedRole(req *requests.FindAllRoles) ([]*
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetTrashedRoles(r.ctx, reqDb)
+	res, err := r.db.GetTrashedRoles(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to fetch trashed roles: invalid parameters (page %d, size %d, search '%s')", req.Page, req.PageSize, req.Search)

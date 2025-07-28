@@ -1,55 +1,57 @@
 package mencache
 
 import (
+	"context"
+
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 type OrderStatsCache interface {
-	GetMonthlyTotalRevenueCache(req *requests.MonthTotalRevenue) ([]*response.OrderMonthlyTotalRevenueResponse, bool)
-	SetMonthlyTotalRevenueCache(req *requests.MonthTotalRevenue, res []*response.OrderMonthlyTotalRevenueResponse)
+	GetMonthlyTotalRevenueCache(ctx context.Context, req *requests.MonthTotalRevenue) ([]*response.OrderMonthlyTotalRevenueResponse, bool)
+	SetMonthlyTotalRevenueCache(ctx context.Context, req *requests.MonthTotalRevenue, res []*response.OrderMonthlyTotalRevenueResponse)
 
-	GetYearlyTotalRevenueCache(year int) ([]*response.OrderYearlyTotalRevenueResponse, bool)
-	SetYearlyTotalRevenueCache(year int, res []*response.OrderYearlyTotalRevenueResponse)
+	GetYearlyTotalRevenueCache(ctx context.Context, year int) ([]*response.OrderYearlyTotalRevenueResponse, bool)
+	SetYearlyTotalRevenueCache(ctx context.Context, year int, res []*response.OrderYearlyTotalRevenueResponse)
 
-	GetMonthlyOrderCache(year int) ([]*response.OrderMonthlyResponse, bool)
-	SetMonthlyOrderCache(year int, res []*response.OrderMonthlyResponse)
+	GetMonthlyOrderCache(ctx context.Context, year int) ([]*response.OrderMonthlyResponse, bool)
+	SetMonthlyOrderCache(ctx context.Context, year int, res []*response.OrderMonthlyResponse)
 
-	GetYearlyOrderCache(year int) ([]*response.OrderYearlyResponse, bool)
-	SetYearlyOrderCache(year int, res []*response.OrderYearlyResponse)
+	GetYearlyOrderCache(ctx context.Context, year int) ([]*response.OrderYearlyResponse, bool)
+	SetYearlyOrderCache(ctx context.Context, year int, res []*response.OrderYearlyResponse)
 }
 
 type OrderStatsByMerchantCache interface {
-	GetMonthlyTotalRevenueByMerchantCache(req *requests.MonthTotalRevenueMerchant) ([]*response.OrderMonthlyTotalRevenueResponse, bool)
-	SetMonthlyTotalRevenueByMerchantCache(req *requests.MonthTotalRevenueMerchant, res []*response.OrderMonthlyTotalRevenueResponse)
+	GetMonthlyTotalRevenueByMerchantCache(ctx context.Context, req *requests.MonthTotalRevenueMerchant) ([]*response.OrderMonthlyTotalRevenueResponse, bool)
+	SetMonthlyTotalRevenueByMerchantCache(ctx context.Context, req *requests.MonthTotalRevenueMerchant, res []*response.OrderMonthlyTotalRevenueResponse)
 
-	GetYearlyTotalRevenueByMerchantCache(req *requests.YearTotalRevenueMerchant) ([]*response.OrderYearlyTotalRevenueResponse, bool)
-	SetYearlyTotalRevenueByMerchantCache(req *requests.YearTotalRevenueMerchant, res []*response.OrderYearlyTotalRevenueResponse)
+	GetYearlyTotalRevenueByMerchantCache(ctx context.Context, req *requests.YearTotalRevenueMerchant) ([]*response.OrderYearlyTotalRevenueResponse, bool)
+	SetYearlyTotalRevenueByMerchantCache(ctx context.Context, req *requests.YearTotalRevenueMerchant, res []*response.OrderYearlyTotalRevenueResponse)
 
-	GetMonthlyOrderByMerchantCache(req *requests.MonthOrderMerchant) ([]*response.OrderMonthlyResponse, bool)
-	SetMonthlyOrderByMerchantCache(req *requests.MonthOrderMerchant, res []*response.OrderMonthlyResponse)
+	GetMonthlyOrderByMerchantCache(ctx context.Context, req *requests.MonthOrderMerchant) ([]*response.OrderMonthlyResponse, bool)
+	SetMonthlyOrderByMerchantCache(ctx context.Context, req *requests.MonthOrderMerchant, res []*response.OrderMonthlyResponse)
 
-	GetYearlyOrderByMerchantCache(req *requests.YearOrderMerchant) ([]*response.OrderYearlyResponse, bool)
-	SetYearlyOrderByMerchantCache(req *requests.YearOrderMerchant, res []*response.OrderYearlyResponse)
+	GetYearlyOrderByMerchantCache(ctx context.Context, req *requests.YearOrderMerchant) ([]*response.OrderYearlyResponse, bool)
+	SetYearlyOrderByMerchantCache(ctx context.Context, req *requests.YearOrderMerchant, res []*response.OrderYearlyResponse)
 }
 
 type OrderQueryCache interface {
-	GetOrderAllCache(req *requests.FindAllOrders) ([]*response.OrderResponse, *int, bool)
-	SetOrderAllCache(req *requests.FindAllOrders, data []*response.OrderResponse, total *int)
+	GetOrderAllCache(ctx context.Context, req *requests.FindAllOrders) ([]*response.OrderResponse, *int, bool)
+	SetOrderAllCache(ctx context.Context, req *requests.FindAllOrders, data []*response.OrderResponse, total *int)
 
-	GetCachedOrderCache(order_id int) (*response.OrderResponse, bool)
-	SetCachedOrderCache(data *response.OrderResponse)
+	GetCachedOrderCache(ctx context.Context, orderID int) (*response.OrderResponse, bool)
+	SetCachedOrderCache(ctx context.Context, data *response.OrderResponse)
 
-	GetCachedOrderMerchant(req *requests.FindAllOrderMerchant) ([]*response.OrderResponse, *int, bool)
-	SetCachedOrderMerchant(req *requests.FindAllOrderMerchant, res []*response.OrderResponse, total *int)
+	GetCachedOrderMerchant(ctx context.Context, req *requests.FindAllOrderMerchant) ([]*response.OrderResponse, *int, bool)
+	SetCachedOrderMerchant(ctx context.Context, req *requests.FindAllOrderMerchant, res []*response.OrderResponse, total *int)
 
-	GetOrderActiveCache(req *requests.FindAllOrders) ([]*response.OrderResponseDeleteAt, *int, bool)
-	SetOrderActiveCache(req *requests.FindAllOrders, data []*response.OrderResponseDeleteAt, total *int)
+	GetOrderActiveCache(ctx context.Context, req *requests.FindAllOrders) ([]*response.OrderResponseDeleteAt, *int, bool)
+	SetOrderActiveCache(ctx context.Context, req *requests.FindAllOrders, data []*response.OrderResponseDeleteAt, total *int)
 
-	GetOrderTrashedCache(req *requests.FindAllOrders) ([]*response.OrderResponseDeleteAt, *int, bool)
-	SetOrderTrashedCache(req *requests.FindAllOrders, data []*response.OrderResponseDeleteAt, total *int)
+	GetOrderTrashedCache(ctx context.Context, req *requests.FindAllOrders) ([]*response.OrderResponseDeleteAt, *int, bool)
+	SetOrderTrashedCache(ctx context.Context, req *requests.FindAllOrders, data []*response.OrderResponseDeleteAt, total *int)
 }
 
 type OrderCommandCache interface {
-	DeleteOrderCache(id int)
+	DeleteOrderCache(ctx context.Context, id int)
 }

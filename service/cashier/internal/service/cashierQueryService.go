@@ -21,7 +21,6 @@ import (
 )
 
 type cashierQueryService struct {
-	ctx             context.Context
 	errorhandler    errorhandler.CashierQueryError
 	mencache        mencache.CashierQueryCache
 	trace           trace.Tracer
@@ -32,7 +31,7 @@ type cashierQueryService struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewCashierQueryService(ctx context.Context,
+func NewCashierQueryService(
 	errorhandler errorhandler.CashierQueryError,
 	mencache mencache.CashierQueryCache,
 	cashierQuery repository.CashierQueryRepository,
@@ -58,7 +57,6 @@ func NewCashierQueryService(ctx context.Context,
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &cashierQueryService{
-		ctx:             ctx,
 		errorhandler:    errorhandler,
 		mencache:        mencache,
 		trace:           otel.Tracer("cashier-query-service"),
@@ -70,24 +68,24 @@ func NewCashierQueryService(ctx context.Context,
 	}
 }
 
-func (s *cashierQueryService) FindAll(req *requests.FindAllCashiers) ([]*response.CashierResponse, *int, *response.ErrorResponse) {
+func (s *cashierQueryService) FindAll(ctx context.Context, req *requests.FindAllCashiers) ([]*response.CashierResponse, *int, *response.ErrorResponse) {
 	const method = "FindAll"
 
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedCashiersCache(req); found {
+	if data, total, found := s.mencache.GetCachedCashiersCache(ctx, req); found {
 		logSuccess("Successfully fetched cashier from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	cashier, totalRecords, err := s.cashierQuery.FindAllCashiers(req)
+	cashier, totalRecords, err := s.cashierQuery.FindAllCashiers(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_cashier", span, &status, zap.Error(err))
@@ -95,31 +93,31 @@ func (s *cashierQueryService) FindAll(req *requests.FindAllCashiers) ([]*respons
 
 	categoriesResponse := s.mapping.ToCashiersResponse(cashier)
 
-	s.mencache.SetCachedCashiersCache(req, categoriesResponse, totalRecords)
+	s.mencache.SetCachedCashiersCache(ctx, req, categoriesResponse, totalRecords)
 
 	logSuccess("Successfully fetched cashier", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return categoriesResponse, totalRecords, nil
 }
 
-func (s *cashierQueryService) FindByMerchant(req *requests.FindAllCashierMerchant) ([]*response.CashierResponse, *int, *response.ErrorResponse) {
+func (s *cashierQueryService) FindByMerchant(ctx context.Context, req *requests.FindAllCashierMerchant) ([]*response.CashierResponse, *int, *response.ErrorResponse) {
 	const method = "FindByMerchant"
 
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search), attribute.Int("merchant.id", req.MerchantID))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search), attribute.Int("merchant.id", req.MerchantID))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedCashiersByMerchant(req); found {
+	if data, total, found := s.mencache.GetCachedCashiersByMerchant(ctx, req); found {
 		logSuccess("Successfully fetched cashier from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	cashier, totalRecords, err := s.cashierQuery.FindByMerchant(req)
+	cashier, totalRecords, err := s.cashierQuery.FindByMerchant(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_cashier", span, &status, zap.Error(err))
@@ -127,32 +125,32 @@ func (s *cashierQueryService) FindByMerchant(req *requests.FindAllCashierMerchan
 
 	categoriesResponse := s.mapping.ToCashiersResponse(cashier)
 
-	s.mencache.SetCachedCashiersByMerchant(req, categoriesResponse, totalRecords)
+	s.mencache.SetCachedCashiersByMerchant(ctx, req, categoriesResponse, totalRecords)
 
 	logSuccess("Successfully fetched cashier", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return categoriesResponse, totalRecords, nil
 }
 
-func (s *cashierQueryService) FindByActive(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *cashierQueryService) FindByActive(ctx context.Context, req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
 	const method = "FindByActive"
 
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedCashiersActive(req); found {
+	if data, total, found := s.mencache.GetCachedCashiersActive(ctx, req); found {
 		logSuccess("Successfully fetched cashier from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 		return data, total, nil
 	}
 
-	cashier, totalRecords, err := s.cashierQuery.FindByActive(req)
+	cashier, totalRecords, err := s.cashierQuery.FindByActive(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_BY_ACTIVE_cashier", span, &status, cashier_errors.ErrFailedFindCashierByActive, zap.Error(err))
@@ -160,32 +158,32 @@ func (s *cashierQueryService) FindByActive(req *requests.FindAllCashiers) ([]*re
 
 	so := s.mapping.ToCashiersResponseDeleteAt(cashier)
 
-	s.mencache.SetCachedCashiersActive(req, so, totalRecords)
+	s.mencache.SetCachedCashiersActive(ctx, req, so, totalRecords)
 
 	logSuccess("Successfully fetched cashier", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return so, totalRecords, nil
 }
 
-func (s *cashierQueryService) FindByTrashed(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *cashierQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, *response.ErrorResponse) {
 	const method = "FindByTrashed"
 
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
 	search := req.Search
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedCashiersTrashed(req); found {
+	if data, total, found := s.mencache.GetCachedCashiersTrashed(ctx, req); found {
 		logSuccess("Successfully fetched categories from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 		return data, total, nil
 	}
 
-	categories, totalRecords, err := s.cashierQuery.FindByTrashed(req)
+	categories, totalRecords, err := s.cashierQuery.FindByTrashed(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_BY_TRASHED_cashier", span, &status, cashier_errors.ErrFailedFindCashierByTrashed, zap.Error(err))
@@ -193,29 +191,29 @@ func (s *cashierQueryService) FindByTrashed(req *requests.FindAllCashiers) ([]*r
 
 	so := s.mapping.ToCashiersResponseDeleteAt(categories)
 
-	s.mencache.SetCachedCashiersTrashed(req, so, totalRecords)
+	s.mencache.SetCachedCashiersTrashed(ctx, req, so, totalRecords)
 
 	logSuccess("Successfully fetched categories", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
 
 	return so, totalRecords, nil
 }
 
-func (s *cashierQueryService) FindById(cashier_id int) (*response.CashierResponse, *response.ErrorResponse) {
+func (s *cashierQueryService) FindById(ctx context.Context, cashier_id int) (*response.CashierResponse, *response.ErrorResponse) {
 	const method = "FindById"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("cashier.id", cashier_id))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("cashier.id", cashier_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetCachedCashier(cashier_id); found {
+	if data, found := s.mencache.GetCachedCashier(ctx, cashier_id); found {
 		logSuccess("Successfully fetched cashier from cache", zap.Int("cashier.id", cashier_id))
 
 		return data, nil
 	}
 
-	cashier, err := s.cashierQuery.FindById(cashier_id)
+	cashier, err := s.cashierQuery.FindById(ctx, cashier_id)
 
 	if err != nil {
 		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_cashier_BY_ID", span, &status, cashier_errors.ErrFailedFindCashierById, zap.Error(err))
@@ -223,14 +221,15 @@ func (s *cashierQueryService) FindById(cashier_id int) (*response.CashierRespons
 
 	so := s.mapping.ToCashierResponse(cashier)
 
-	s.mencache.SetCachedCashier(so)
+	s.mencache.SetCachedCashier(ctx, so)
 
 	logSuccess("Successfully fetched cashier", zap.Int("cashier.id", cashier_id))
 
 	return so, nil
 }
 
-func (s *cashierQueryService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+func (s *cashierQueryService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
+	context.Context,
 	trace.Span,
 	func(string),
 	string,
@@ -239,7 +238,7 @@ func (s *cashierQueryService) startTracingAndLogging(method string, attrs ...att
 	start := time.Now()
 	status := "success"
 
-	_, span := s.trace.Start(s.ctx, method)
+	ctx, span := s.trace.Start(ctx, method)
 
 	if len(attrs) > 0 {
 		span.SetAttributes(attrs...)
@@ -264,7 +263,7 @@ func (s *cashierQueryService) startTracingAndLogging(method string, attrs ...att
 		s.logger.Debug(msg, fields...)
 	}
 
-	return span, end, status, logSuccess
+	return ctx, span, end, status, logSuccess
 }
 
 func (s *cashierQueryService) normalizePagination(page, pageSize int) (int, int) {

@@ -1,9 +1,9 @@
 github.com/IBM/sarama v1.45.1 h1:nY30XqYpqyXOXSNoe2XCgjj9jklGM1Ye94ierUb1jQ0=
 github.com/IBM/sarama v1.45.1/go.mod h1:qifDhA3VWSrQ1TjSMyxDl3nYL3oX2C83u+G6L79sq4w=
-github.com/MamangRust/monolith-point-of-sale-pkg v1.0.5 h1:yc3pIlWt9aoCkh0+egcfUONPrRAdcQY/NcevwEGeWTs=
-github.com/MamangRust/monolith-point-of-sale-pkg v1.0.5/go.mod h1:CtLGY5BbutyzkdpwM7qB4iFATj018b8+jKMHntPmFuo=
-github.com/MamangRust/monolith-point-of-sale-shared v1.0.5 h1:BSPfiXnL4xU7v5vy5MEo82FUWiHOGjqkjR7uDL/MhM4=
-github.com/MamangRust/monolith-point-of-sale-shared v1.0.5/go.mod h1:zo+7gMr6D2rDN351BR8l35Atc/rwVegi6TyYeiYa3W0=
+github.com/MamangRust/monolith-point-of-sale-pkg v1.0.7 h1:p96+E3xpb9dyg0ZluS0IXTIE0TopsRIKNvNTDJLIE38=
+github.com/MamangRust/monolith-point-of-sale-pkg v1.0.7/go.mod h1:CtLGY5BbutyzkdpwM7qB4iFATj018b8+jKMHntPmFuo=
+github.com/MamangRust/monolith-point-of-sale-shared v1.0.8 h1:sBCpvWcGTetVb6JPzQHqxDoehCX35roNgGwnMkzTjOA=
+github.com/MamangRust/monolith-point-of-sale-shared v1.0.8/go.mod h1:5k1vF+3NpCVxDKYIRDkuX3tDeEjzix5jzKGc4TE/NhI=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bsm/ginkgo/v2 v2.12.0 h1:Ny8MWAHyOepLGlLKYmXG4IEkioBysk6GpaRTLC8zwWs=

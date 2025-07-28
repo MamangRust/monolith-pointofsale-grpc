@@ -1,8 +1,6 @@
 package repository
 
 import (
-	"context"
-
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
 )
@@ -20,12 +18,7 @@ type Repositories struct {
 	OrderStatsByMerchant OrderStatByMerchantRepository
 }
 
-type Deps struct {
-	DB  *db.Queries
-	Ctx context.Context
-}
-
-func NewRepositories(deps *Deps) *Repositories {
+func NewRepositories(DB *db.Queries) *Repositories {
 	mapperCashier := recordmapper.NewCashierRecordMapper()
 	mapperMerchant := recordmapper.NewMerchantRecordMapper()
 	mapperProduct := recordmapper.NewProductRecordMapper()
@@ -33,15 +26,15 @@ func NewRepositories(deps *Deps) *Repositories {
 	mapperOrderItem := recordmapper.NewOrderItemRecordMapper()
 
 	return &Repositories{
-		CashierQuery:         NewCashierQueryRepository(deps.DB, deps.Ctx, mapperCashier),
-		MerchantQuery:        NewMerchantQueryRepository(deps.DB, deps.Ctx, mapperMerchant),
-		ProductQuery:         NewProductQueryRepository(deps.DB, deps.Ctx, mapperProduct),
-		ProductCommand:       NewProductCommandRepository(deps.DB, deps.Ctx, mapperProduct),
-		OrderQuery:           NewOrderQueryRepository(deps.DB, deps.Ctx, mapperOrder),
-		OrderCommand:         NewOrderCommandRepository(deps.DB, deps.Ctx, mapperOrder),
-		OrderItemQuery:       NewOrderItemQueryRepository(deps.DB, deps.Ctx, mapperOrderItem),
-		OrderItemCommand:     NewOrderItemCommandRepository(deps.DB, deps.Ctx, mapperOrderItem),
-		OrderStats:           NewOrderStatsRepository(deps.DB, deps.Ctx, mapperOrder),
-		OrderStatsByMerchant: NewOrderStatsByMerchantRepository(deps.DB, deps.Ctx, mapperOrder),
+		CashierQuery:         NewCashierQueryRepository(DB, mapperCashier),
+		MerchantQuery:        NewMerchantQueryRepository(DB, mapperMerchant),
+		ProductQuery:         NewProductQueryRepository(DB, mapperProduct),
+		ProductCommand:       NewProductCommandRepository(DB, mapperProduct),
+		OrderQuery:           NewOrderQueryRepository(DB, mapperOrder),
+		OrderCommand:         NewOrderCommandRepository(DB, mapperOrder),
+		OrderItemQuery:       NewOrderItemQueryRepository(DB, mapperOrderItem),
+		OrderItemCommand:     NewOrderItemCommandRepository(DB, mapperOrderItem),
+		OrderStats:           NewOrderStatsRepository(DB, mapperOrder),
+		OrderStatsByMerchant: NewOrderStatsByMerchantRepository(DB, mapperOrder),
 	}
 }

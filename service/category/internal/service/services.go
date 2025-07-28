@@ -30,10 +30,10 @@ func NewService(deps *Deps) *Service {
 	categoryMapper := response_service.NewCategoryResponseMapper()
 
 	return &Service{
-		CategoryQuery:           NewCategoryQueryService(deps.Ctx, deps.ErrorHandler.CategoryQueryError, deps.Mencache.CategoryQueryCache, deps.Repositories.CategoryQuery, deps.Logger, categoryMapper),
-		CategoryCommand:         NewCategoryCommandService(deps.Ctx, deps.Mencache.CategoryCommandCache, deps.ErrorHandler.CategoryCommandError, deps.Repositories.CategoryCommand, deps.Repositories.CategoryQuery, deps.Logger, categoryMapper),
-		CategoryStats:           NewCategoryStatsService(deps.Ctx, deps.Mencache.CategoryStatsCache, deps.ErrorHandler.CategoryStatsByIdError, deps.Repositories.CategoryStats, deps.Logger, categoryMapper),
-		CategoryStatsById:       NewCategoryStatsByIdService(deps.Ctx, deps.Mencache.CategoryStatsByIdCache, deps.ErrorHandler.CategoryStatsByIdError, deps.Repositories.CategoryStatsById, deps.Logger, categoryMapper),
-		CategoryStatsByMerchant: NewCategoryStatsByMerchantService(deps.Ctx, deps.Mencache.CategoryStatsByMerchantCache, deps.ErrorHandler.CategoryStatsByMerchantError, deps.Repositories.CategoryStatsByMerchant, deps.Logger, categoryMapper),
+		CategoryQuery:           NewCategoryQueryService(deps.ErrorHandler.CategoryQueryError, deps.Mencache.CategoryQueryCache, deps.Repositories.CategoryQuery, deps.Logger, categoryMapper),
+		CategoryCommand:         NewCategoryCommandService(deps.Mencache.CategoryCommandCache, deps.ErrorHandler.CategoryCommandError, deps.Repositories.CategoryCommand, deps.Repositories.CategoryQuery, deps.Logger, categoryMapper),
+		CategoryStats:           NewCategoryStatsService(deps.Mencache.CategoryStatsCache, deps.ErrorHandler.CategoryStatsByIdError, deps.Repositories.CategoryStats, deps.Logger, categoryMapper),
+		CategoryStatsById:       NewCategoryStatsByIdService(deps.Mencache.CategoryStatsByIdCache, deps.ErrorHandler.CategoryStatsByIdError, deps.Repositories.CategoryStatsById, deps.Logger, categoryMapper),
+		CategoryStatsByMerchant: NewCategoryStatsByMerchantService(deps.Mencache.CategoryStatsByMerchantCache, deps.ErrorHandler.CategoryStatsByMerchantError, deps.Repositories.CategoryStatsByMerchant, deps.Logger, categoryMapper),
 	}
 }

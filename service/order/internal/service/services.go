@@ -28,9 +28,9 @@ type Deps struct {
 func NewService(deps *Deps) *Service {
 	mapper := response_service.NewOrderResponseMapper()
 	return &Service{
-		OrderQuery:           NewOrderQueryService(deps.Ctx, deps.ErrorHandler.OrderQueryError, deps.Mencache.OrderQueryCache, deps.Repositories.OrderQuery, deps.Logger, mapper),
-		OrderCommand:         NewOrderCommandService(deps.Ctx, deps.ErrorHandler.OrderCommandError, deps.Mencache.OrderCommandCache, deps.Repositories.CashierQuery, deps.Repositories.OrderItemQuery, deps.Repositories.OrderItemCommand, deps.Repositories.OrderQuery, deps.Repositories.OrderCommand, deps.Repositories.ProductQuery, deps.Repositories.ProductCommand, deps.Repositories.MerchantQuery, deps.Logger, mapper),
-		OrderStats:           NewOrderStatsService(deps.Ctx, deps.ErrorHandler.OrderStats, deps.Mencache.OrderStatsCache, deps.Repositories.OrderStats, deps.Logger, mapper),
-		OrderStatsByMerchant: NewOrderStatsByMerchantService(deps.Ctx, deps.Mencache.OrderStatsByMerchantCache, deps.ErrorHandler.OrderStatsByMerchant, deps.Repositories.OrderStatsByMerchant, deps.Logger, mapper),
+		OrderQuery:           NewOrderQueryService(deps.ErrorHandler.OrderQueryError, deps.Mencache.OrderQueryCache, deps.Repositories.OrderQuery, deps.Logger, mapper),
+		OrderCommand:         NewOrderCommandService(deps.ErrorHandler.OrderCommandError, deps.Mencache.OrderCommandCache, deps.Repositories.CashierQuery, deps.Repositories.OrderItemQuery, deps.Repositories.OrderItemCommand, deps.Repositories.OrderQuery, deps.Repositories.OrderCommand, deps.Repositories.ProductQuery, deps.Repositories.ProductCommand, deps.Repositories.MerchantQuery, deps.Logger, mapper),
+		OrderStats:           NewOrderStatsService(deps.ErrorHandler.OrderStats, deps.Mencache.OrderStatsCache, deps.Repositories.OrderStats, deps.Logger, mapper),
+		OrderStatsByMerchant: NewOrderStatsByMerchantService(deps.Mencache.OrderStatsByMerchantCache, deps.ErrorHandler.OrderStatsByMerchant, deps.Repositories.OrderStatsByMerchant, deps.Logger, mapper),
 	}
 }

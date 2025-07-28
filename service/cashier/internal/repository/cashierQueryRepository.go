@@ -12,19 +12,17 @@ import (
 
 type cashierQueryRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.CashierRecordMapping
 }
 
-func NewCashierQueryRepository(db *db.Queries, ctx context.Context, mapping recordmapper.CashierRecordMapping) *cashierQueryRepository {
+func NewCashierQueryRepository(db *db.Queries, mapping recordmapper.CashierRecordMapping) *cashierQueryRepository {
 	return &cashierQueryRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r *cashierQueryRepository) FindAllCashiers(req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error) {
+func (r *cashierQueryRepository) FindAllCashiers(ctx context.Context, req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetCashiersParams{
@@ -33,7 +31,7 @@ func (r *cashierQueryRepository) FindAllCashiers(req *requests.FindAllCashiers) 
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetCashiers(r.ctx, reqDb)
+	res, err := r.db.GetCashiers(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, cashier_errors.ErrFindAllCashiers
@@ -50,7 +48,7 @@ func (r *cashierQueryRepository) FindAllCashiers(req *requests.FindAllCashiers) 
 	return r.mapping.ToCashiersRecordPagination(res), &totalCount, nil
 }
 
-func (r *cashierQueryRepository) FindByActive(req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error) {
+func (r *cashierQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetCashiersActiveParams{
@@ -59,7 +57,7 @@ func (r *cashierQueryRepository) FindByActive(req *requests.FindAllCashiers) ([]
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetCashiersActive(r.ctx, reqDb)
+	res, err := r.db.GetCashiersActive(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, cashier_errors.ErrFindActiveCashiers
@@ -75,7 +73,7 @@ func (r *cashierQueryRepository) FindByActive(req *requests.FindAllCashiers) ([]
 	return r.mapping.ToCashiersRecordActivePagination(res), &totalCount, nil
 }
 
-func (r *cashierQueryRepository) FindByTrashed(req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error) {
+func (r *cashierQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetCashiersTrashedParams{
@@ -84,7 +82,7 @@ func (r *cashierQueryRepository) FindByTrashed(req *requests.FindAllCashiers) ([
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetCashiersTrashed(r.ctx, reqDb)
+	res, err := r.db.GetCashiersTrashed(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, cashier_errors.ErrFindTrashedCashiers
@@ -100,7 +98,7 @@ func (r *cashierQueryRepository) FindByTrashed(req *requests.FindAllCashiers) ([
 	return r.mapping.ToCashiersRecordTrashedPagination(res), &totalCount, nil
 }
 
-func (r *cashierQueryRepository) FindByMerchant(req *requests.FindAllCashierMerchant) ([]*record.CashierRecord, *int, error) {
+func (r *cashierQueryRepository) FindByMerchant(ctx context.Context, req *requests.FindAllCashierMerchant) ([]*record.CashierRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetCashiersByMerchantParams{
@@ -110,7 +108,7 @@ func (r *cashierQueryRepository) FindByMerchant(req *requests.FindAllCashierMerc
 		Offset:     int32(offset),
 	}
 
-	res, err := r.db.GetCashiersByMerchant(r.ctx, reqDb)
+	res, err := r.db.GetCashiersByMerchant(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, cashier_errors.ErrFindCashiersByMerchant
@@ -126,8 +124,8 @@ func (r *cashierQueryRepository) FindByMerchant(req *requests.FindAllCashierMerc
 	return r.mapping.ToCashiersMerchantRecordPagination(res), &totalCount, nil
 }
 
-func (r *cashierQueryRepository) FindById(cashier_id int) (*record.CashierRecord, error) {
-	res, err := r.db.GetCashierById(r.ctx, int32(cashier_id))
+func (r *cashierQueryRepository) FindById(ctx context.Context, cashier_id int) (*record.CashierRecord, error) {
+	res, err := r.db.GetCashierById(ctx, int32(cashier_id))
 
 	if err != nil {
 		return nil, cashier_errors.ErrFindCashierById

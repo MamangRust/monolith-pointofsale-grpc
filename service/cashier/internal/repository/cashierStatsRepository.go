@@ -14,19 +14,17 @@ import (
 
 type cashierStatsRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.CashierRecordMapping
 }
 
-func NewCashierStatsRepository(db *db.Queries, ctx context.Context, mapping recordmapper.CashierRecordMapping) *cashierStatsRepository {
+func NewCashierStatsRepository(db *db.Queries, mapping recordmapper.CashierRecordMapping) *cashierStatsRepository {
 	return &cashierStatsRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r *cashierStatsRepository) GetMonthlyTotalSales(req *requests.MonthTotalSales) ([]*record.CashierRecordMonthTotalSales, error) {
+func (r *cashierStatsRepository) GetMonthlyTotalSales(ctx context.Context, req *requests.MonthTotalSales) ([]*record.CashierRecordMonthTotalSales, error) {
 	currentMonthStart := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	currentMonthEnd := currentMonthStart.AddDate(0, 1, -1)
 
@@ -40,7 +38,7 @@ func (r *cashierStatsRepository) GetMonthlyTotalSales(req *requests.MonthTotalSa
 		CreatedAt_3: sql.NullTime{Time: prevMonthEnd, Valid: true},
 	}
 
-	res, err := r.db.GetMonthlyTotalSalesCashier(r.ctx, params)
+	res, err := r.db.GetMonthlyTotalSalesCashier(ctx, params)
 
 	if err != nil {
 		return nil, cashier_errors.ErrGetMonthlyTotalSales
@@ -49,8 +47,8 @@ func (r *cashierStatsRepository) GetMonthlyTotalSales(req *requests.MonthTotalSa
 	return r.mapping.ToCashierMonthlyTotalSales(res), nil
 }
 
-func (r *cashierStatsRepository) GetYearlyTotalSales(year int) ([]*record.CashierRecordYearTotalSales, error) {
-	res, err := r.db.GetYearlyTotalSalesCashier(r.ctx, int32(year))
+func (r *cashierStatsRepository) GetYearlyTotalSales(ctx context.Context, year int) ([]*record.CashierRecordYearTotalSales, error) {
+	res, err := r.db.GetYearlyTotalSalesCashier(ctx, int32(year))
 
 	if err != nil {
 		return nil, cashier_errors.ErrGetYearlyTotalSales
@@ -61,10 +59,10 @@ func (r *cashierStatsRepository) GetYearlyTotalSales(year int) ([]*record.Cashie
 	return so, nil
 }
 
-func (r *cashierStatsRepository) GetMonthyCashier(year int) ([]*record.CashierRecordMonthSales, error) {
+func (r *cashierStatsRepository) GetMonthyCashier(ctx context.Context, year int) ([]*record.CashierRecordMonthSales, error) {
 	yearStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	res, err := r.db.GetMonthlyCashier(r.ctx, yearStart)
+	res, err := r.db.GetMonthlyCashier(ctx, yearStart)
 
 	if err != nil {
 		return nil, cashier_errors.ErrGetMonthlyCashier
@@ -74,10 +72,10 @@ func (r *cashierStatsRepository) GetMonthyCashier(year int) ([]*record.CashierRe
 
 }
 
-func (r *cashierStatsRepository) GetYearlyCashier(year int) ([]*record.CashierRecordYearSales, error) {
+func (r *cashierStatsRepository) GetYearlyCashier(ctx context.Context, year int) ([]*record.CashierRecordYearSales, error) {
 	yearStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	res, err := r.db.GetYearlyCashier(r.ctx, yearStart)
+	res, err := r.db.GetYearlyCashier(ctx, yearStart)
 
 	if err != nil {
 		return nil, cashier_errors.ErrGetYearlyCashier

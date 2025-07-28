@@ -12,26 +12,24 @@ import (
 
 type cashierCommandRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.CashierRecordMapping
 }
 
-func NewCashierCommandRepository(db *db.Queries, ctx context.Context, mapping recordmapper.CashierRecordMapping) *cashierCommandRepository {
+func NewCashierCommandRepository(db *db.Queries, mapping recordmapper.CashierRecordMapping) *cashierCommandRepository {
 	return &cashierCommandRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r *cashierCommandRepository) CreateCashier(request *requests.CreateCashierRequest) (*record.CashierRecord, error) {
+func (r *cashierCommandRepository) CreateCashier(ctx context.Context, request *requests.CreateCashierRequest) (*record.CashierRecord, error) {
 	req := db.CreateCashierParams{
 		MerchantID: int32(request.MerchantID),
 		UserID:     int32(request.UserID),
 		Name:       request.Name,
 	}
 
-	cashier, err := r.db.CreateCashier(r.ctx, req)
+	cashier, err := r.db.CreateCashier(ctx, req)
 
 	if err != nil {
 		return nil, cashier_errors.ErrCreateCashier
@@ -40,13 +38,13 @@ func (r *cashierCommandRepository) CreateCashier(request *requests.CreateCashier
 	return r.mapping.ToCashierRecord(cashier), nil
 }
 
-func (r *cashierCommandRepository) UpdateCashier(request *requests.UpdateCashierRequest) (*record.CashierRecord, error) {
+func (r *cashierCommandRepository) UpdateCashier(ctx context.Context, request *requests.UpdateCashierRequest) (*record.CashierRecord, error) {
 	req := db.UpdateCashierParams{
 		CashierID: int32(*request.CashierID),
 		Name:      request.Name,
 	}
 
-	res, err := r.db.UpdateCashier(r.ctx, req)
+	res, err := r.db.UpdateCashier(ctx, req)
 
 	if err != nil {
 		return nil, cashier_errors.ErrUpdateCashier
@@ -55,8 +53,8 @@ func (r *cashierCommandRepository) UpdateCashier(request *requests.UpdateCashier
 	return r.mapping.ToCashierRecord(res), nil
 }
 
-func (r *cashierCommandRepository) TrashedCashier(cashier_id int) (*record.CashierRecord, error) {
-	res, err := r.db.TrashCashier(r.ctx, int32(cashier_id))
+func (r *cashierCommandRepository) TrashedCashier(ctx context.Context, cashier_id int) (*record.CashierRecord, error) {
+	res, err := r.db.TrashCashier(ctx, int32(cashier_id))
 
 	if err != nil {
 		return nil, cashier_errors.ErrTrashedCashier
@@ -65,8 +63,8 @@ func (r *cashierCommandRepository) TrashedCashier(cashier_id int) (*record.Cashi
 	return r.mapping.ToCashierRecord(res), nil
 }
 
-func (r *cashierCommandRepository) RestoreCashier(cashier_id int) (*record.CashierRecord, error) {
-	res, err := r.db.RestoreCashier(r.ctx, int32(cashier_id))
+func (r *cashierCommandRepository) RestoreCashier(ctx context.Context, cashier_id int) (*record.CashierRecord, error) {
+	res, err := r.db.RestoreCashier(ctx, int32(cashier_id))
 
 	if err != nil {
 		return nil, cashier_errors.ErrRestoreCashier
@@ -75,8 +73,8 @@ func (r *cashierCommandRepository) RestoreCashier(cashier_id int) (*record.Cashi
 	return r.mapping.ToCashierRecord(res), nil
 }
 
-func (r *cashierCommandRepository) DeleteCashierPermanent(cashier_id int) (bool, error) {
-	err := r.db.DeleteCashierPermanently(r.ctx, int32(cashier_id))
+func (r *cashierCommandRepository) DeleteCashierPermanent(ctx context.Context, cashier_id int) (bool, error) {
+	err := r.db.DeleteCashierPermanently(ctx, int32(cashier_id))
 
 	if err != nil {
 		return false, cashier_errors.ErrDeleteCashierPermanent
@@ -85,8 +83,8 @@ func (r *cashierCommandRepository) DeleteCashierPermanent(cashier_id int) (bool,
 	return true, nil
 }
 
-func (r *cashierCommandRepository) RestoreAllCashier() (bool, error) {
-	err := r.db.RestoreAllCashiers(r.ctx)
+func (r *cashierCommandRepository) RestoreAllCashier(ctx context.Context) (bool, error) {
+	err := r.db.RestoreAllCashiers(ctx)
 
 	if err != nil {
 		return false, cashier_errors.ErrRestoreAllCashiers
@@ -95,8 +93,8 @@ func (r *cashierCommandRepository) RestoreAllCashier() (bool, error) {
 	return true, nil
 }
 
-func (r *cashierCommandRepository) DeleteAllCashierPermanent() (bool, error) {
-	err := r.db.DeleteAllPermanentCashiers(r.ctx)
+func (r *cashierCommandRepository) DeleteAllCashierPermanent(ctx context.Context) (bool, error) {
+	err := r.db.DeleteAllPermanentCashiers(ctx)
 
 	if err != nil {
 		return false, cashier_errors.ErrDeleteAllCashiersPermanent

@@ -45,7 +45,7 @@ func (s *orderItemHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllOr
 		Search:   search,
 	}
 
-	orderItems, totalRecords, err := s.orderItemService.FindAllOrderItems(&reqService)
+	orderItems, totalRecords, err := s.orderItemService.FindAllOrderItems(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -82,7 +82,7 @@ func (s *orderItemHandleGrpc) FindByActive(ctx context.Context, request *pb.Find
 		Search:   search,
 	}
 
-	orderItems, totalRecords, err := s.orderItemService.FindByActive(&reqService)
+	orderItems, totalRecords, err := s.orderItemService.FindByActive(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -119,7 +119,7 @@ func (s *orderItemHandleGrpc) FindByTrashed(ctx context.Context, request *pb.Fin
 		Search:   search,
 	}
 
-	orderItems, totalRecords, err := s.orderItemService.FindByTrashed(&reqService)
+	orderItems, totalRecords, err := s.orderItemService.FindByTrashed(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -145,7 +145,7 @@ func (s *orderItemHandleGrpc) FindOrderItemByOrder(ctx context.Context, request 
 		return nil, orderitem_errors.ErrGrpcInvalidID
 	}
 
-	orderItems, err := s.orderItemService.FindOrderItemByOrder(id)
+	orderItems, err := s.orderItemService.FindOrderItemByOrder(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)

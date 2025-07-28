@@ -163,11 +163,12 @@ func RunClient() (*Client, func(), error) {
 	image_upload := upload_image.NewImageUpload()
 
 	depsHandler := &handler.Deps{
-		Token:       token,
-		E:           e,
-		Logger:      log,
-		Mapping:     mapping,
-		ImageUpload: image_upload,
+		Token:              token,
+		E:                  e,
+		Logger:             log,
+		Mapping:            mapping,
+		ImageUpload:        image_upload,
+		ServiceConnections: &conns,
 	}
 
 	handler.NewHandler(depsHandler)

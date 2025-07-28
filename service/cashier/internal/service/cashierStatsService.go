@@ -20,7 +20,6 @@ import (
 )
 
 type cashierStatsService struct {
-	ctx             context.Context
 	mencache        mencache.CashierStatsCache
 	errorhandler    errorhandler.CashierStatsError
 	trace           trace.Tracer
@@ -31,7 +30,7 @@ type cashierStatsService struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewCashierStatsService(ctx context.Context,
+func NewCashierStatsService(
 	mencache mencache.CashierStatsCache,
 	errorhandler errorhandler.CashierStatsError,
 	cashierStats repository.CashierStatsRepository,
@@ -57,7 +56,6 @@ func NewCashierStatsService(ctx context.Context,
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &cashierStatsService{
-		ctx:             ctx,
 		mencache:        mencache,
 		errorhandler:    errorhandler,
 		trace:           otel.Tracer("cashier-stats-service"),
@@ -68,106 +66,107 @@ func NewCashierStatsService(ctx context.Context,
 		requestDuration: requestDuration,
 	}
 }
-func (s *cashierStatsService) FindMonthlyTotalSales(req *requests.MonthTotalSales) ([]*response.CashierResponseMonthTotalSales, *response.ErrorResponse) {
+func (s *cashierStatsService) FindMonthlyTotalSales(ctx context.Context, req *requests.MonthTotalSales) ([]*response.CashierResponseMonthTotalSales, *response.ErrorResponse) {
 	const method = "FindMonthlyTotalSales"
 
 	month := req.Month
 	year := req.Year
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("month", month), attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("month", month), attribute.Int("year", year))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetMonthlyTotalSalesCache(req); found {
+	if data, found := s.mencache.GetMonthlyTotalSalesCache(ctx, req); found {
 		logSuccess("Fetched monthly total sales from cache", zap.Int("month", month), zap.Int("year", year))
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetMonthlyTotalSales(req)
+	res, err := s.cashierStats.GetMonthlyTotalSales(ctx, req)
 	if err != nil {
 		return s.errorhandler.HandleMonthlyTotalSalesError(err, method, "FAILED_FIND_MONTHLY_TOTAL_SALES", span, &status, zap.Error(err))
 	}
 
 	mapped := s.mapping.ToCashierMonthlyTotalSales(res)
-	s.mencache.SetMonthlyTotalSalesCache(req, mapped)
+	s.mencache.SetMonthlyTotalSalesCache(ctx, req, mapped)
 
 	logSuccess("Fetched monthly total sales from DB", zap.Int("month", month), zap.Int("year", year))
 	return mapped, nil
 }
 
-func (s *cashierStatsService) FindYearlyTotalSales(year int) ([]*response.CashierResponseYearTotalSales, *response.ErrorResponse) {
+func (s *cashierStatsService) FindYearlyTotalSales(ctx context.Context, year int) ([]*response.CashierResponseYearTotalSales, *response.ErrorResponse) {
 	const method = "FindYearlyTotalSales"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("year", year))
 	defer end(status)
 
-	if data, found := s.mencache.GetYearlyTotalSalesCache(year); found {
+	if data, found := s.mencache.GetYearlyTotalSalesCache(ctx, year); found {
 		logSuccess("Fetched yearly total sales from cache", zap.Int("year", year))
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetYearlyTotalSales(year)
+	res, err := s.cashierStats.GetYearlyTotalSales(ctx, year)
 	if err != nil {
 		return s.errorhandler.HandleYearlyTotalSalesError(err, method, "FAILED_FIND_YEARLY_TOTAL_SALES", span, &status, zap.Error(err))
 	}
 
 	mapped := s.mapping.ToCashierYearlyTotalSales(res)
-	s.mencache.SetYearlyTotalSalesCache(year, mapped)
+	s.mencache.SetYearlyTotalSalesCache(ctx, year, mapped)
 
 	logSuccess("Fetched yearly total sales from DB", zap.Int("year", year))
 	return mapped, nil
 }
 
-func (s *cashierStatsService) FindMonthlySales(year int) ([]*response.CashierResponseMonthSales, *response.ErrorResponse) {
+func (s *cashierStatsService) FindMonthlySales(ctx context.Context, year int) ([]*response.CashierResponseMonthSales, *response.ErrorResponse) {
 	const method = "FindMonthlySales"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("year", year))
 	defer end(status)
 
-	if data, found := s.mencache.GetMonthlySalesCache(year); found {
+	if data, found := s.mencache.GetMonthlySalesCache(ctx, year); found {
 		logSuccess("Fetched monthly sales from cache", zap.Int("year", year))
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetMonthyCashier(year)
+	res, err := s.cashierStats.GetMonthyCashier(ctx, year)
 
 	if err != nil {
 		return s.errorhandler.HandleMonthlySalesError(err, method, "FAILED_FIND_MONTHLY_SALES", span, &status, zap.Error(err))
 	}
 
 	mapped := s.mapping.ToCashierMonthlySales(res)
-	s.mencache.SetMonthlySalesCache(year, mapped)
+	s.mencache.SetMonthlySalesCache(ctx, year, mapped)
 
 	logSuccess("Fetched monthly sales from DB", zap.Int("year", year))
 	return mapped, nil
 }
 
-func (s *cashierStatsService) FindYearlySales(year int) ([]*response.CashierResponseYearSales, *response.ErrorResponse) {
+func (s *cashierStatsService) FindYearlySales(ctx context.Context, year int) ([]*response.CashierResponseYearSales, *response.ErrorResponse) {
 	const method = "FindYearlySales"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("year", year))
 	defer end(status)
 
-	if data, found := s.mencache.GetYearlySalesCache(year); found {
+	if data, found := s.mencache.GetYearlySalesCache(ctx, year); found {
 		logSuccess("Fetched yearly sales from cache", zap.Int("year", year))
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetYearlyCashier(year)
+	res, err := s.cashierStats.GetYearlyCashier(ctx, year)
 	if err != nil {
 		return s.errorhandler.HandleYearlySalesError(err, method, "FAILED_FIND_YEARLY_SALES", span, &status, zap.Error(err))
 	}
 
 	mapped := s.mapping.ToCashierYearlySales(res)
-	s.mencache.SetYearlySalesCache(year, mapped)
+	s.mencache.SetYearlySalesCache(ctx, year, mapped)
 
 	logSuccess("Fetched yearly sales from DB", zap.Int("year", year))
 	return mapped, nil
 }
 
-func (s *cashierStatsService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+func (s *cashierStatsService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
+	context.Context,
 	trace.Span,
 	func(string),
 	string,
@@ -176,7 +175,7 @@ func (s *cashierStatsService) startTracingAndLogging(method string, attrs ...att
 	start := time.Now()
 	status := "success"
 
-	_, span := s.trace.Start(s.ctx, method)
+	ctx, span := s.trace.Start(ctx, method)
 
 	if len(attrs) > 0 {
 		span.SetAttributes(attrs...)
@@ -201,7 +200,7 @@ func (s *cashierStatsService) startTracingAndLogging(method string, attrs ...att
 		s.logger.Debug(msg, fields...)
 	}
 
-	return span, end, status, logSuccess
+	return ctx, span, end, status, logSuccess
 }
 
 func (s *cashierStatsService) recordMetrics(method string, status string, start time.Time) {

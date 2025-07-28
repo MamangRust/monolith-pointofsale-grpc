@@ -3,8 +3,8 @@ module github.com/MamangRust/monolith-point-of-sale-merchant
 go 1.23.4
 
 require (
-	github.com/MamangRust/monolith-point-of-sale-pkg v1.0.5
-	github.com/MamangRust/monolith-point-of-sale-shared v1.0.5
+	github.com/MamangRust/monolith-point-of-sale-pkg v1.0.7
+	github.com/MamangRust/monolith-point-of-sale-shared v1.0.8
 	github.com/prometheus/client_golang v1.22.0
 	github.com/redis/go-redis/v9 v9.10.0
 	github.com/spf13/viper v1.20.1

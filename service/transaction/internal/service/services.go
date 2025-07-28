@@ -31,9 +31,9 @@ func NewService(deps *Deps) *Service {
 	mapper := response_service.NewTransactionResponseMapper()
 
 	return &Service{
-		TransactionQuery:           NewTransactionQueryService(deps.Ctx, deps.Mencache.TransactionQueryCache, deps.ErrorHandler.TransactionQueryError, deps.Repositories.TransactionQueryRepository, mapper, deps.Logger),
-		TransactionCommand:         NewTransactionCommandService(deps.Ctx, deps.Mencache.TransactionCommandCache, deps.ErrorHandler.TransactionCommandError, deps.Repositories.CashierQuery, deps.Repositories.MerchantQuery, deps.Repositories.TransactionQueryRepository, deps.Repositories.TransactionCommandRepository, deps.Repositories.OrderQuery, deps.Repositories.OrderItemQuery, mapper, deps.Logger),
-		TransactionStats:           NewTransactionStatsService(deps.Ctx, deps.ErrorHandler.TransactionStatsError, deps.Mencache.TransactionStatsCache, deps.Repositories.TransactionStatsRepository, mapper, deps.Logger),
-		TransactionStatsByMerchant: NewTransactionStatsByMerchantService(deps.Ctx, deps.ErrorHandler.TransactonStatsByMerchantError, deps.Mencache.TransactionStatsByMerchant, deps.Repositories.TransactionStatsByMerchant, mapper, deps.Logger),
+		TransactionQuery:           NewTransactionQueryService(deps.Mencache.TransactionQueryCache, deps.ErrorHandler.TransactionQueryError, deps.Repositories.TransactionQueryRepository, mapper, deps.Logger),
+		TransactionCommand:         NewTransactionCommandService(deps.Mencache.TransactionCommandCache, deps.ErrorHandler.TransactionCommandError, deps.Repositories.CashierQuery, deps.Repositories.MerchantQuery, deps.Repositories.TransactionQueryRepository, deps.Repositories.TransactionCommandRepository, deps.Repositories.OrderQuery, deps.Repositories.OrderItemQuery, mapper, deps.Logger),
+		TransactionStats:           NewTransactionStatsService(deps.ErrorHandler.TransactionStatsError, deps.Mencache.TransactionStatsCache, deps.Repositories.TransactionStatsRepository, mapper, deps.Logger),
+		TransactionStatsByMerchant: NewTransactionStatsByMerchantService(deps.ErrorHandler.TransactonStatsByMerchantError, deps.Mencache.TransactionStatsByMerchant, deps.Repositories.TransactionStatsByMerchant, mapper, deps.Logger),
 	}
 }

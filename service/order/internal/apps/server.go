@@ -11,6 +11,7 @@ import (
 
 	"github.com/MamangRust/monolith-point-of-sale-order/internal/errorhandler"
 	"github.com/MamangRust/monolith-point-of-sale-order/internal/handler"
+	"github.com/MamangRust/monolith-point-of-sale-order/internal/middleware"
 	mencache "github.com/MamangRust/monolith-point-of-sale-order/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-order/internal/repository"
 	"github.com/MamangRust/monolith-point-of-sale-order/internal/service"
@@ -50,7 +51,7 @@ type Server struct {
 	Ctx      context.Context
 }
 
-func NewServer() (*Server, func(context.Context) error, error) {
+func NewServer(ctx context.Context) (*Server, func(context.Context) error, error) {
 	logger, err := logger.NewLogger("order")
 
 	if err != nil {
@@ -71,14 +72,7 @@ func NewServer() (*Server, func(context.Context) error, error) {
 
 	DB := db.New(conn)
 
-	ctx := context.Background()
-
-	depsRepo := &repository.Deps{
-		DB:  DB,
-		Ctx: ctx,
-	}
-
-	repositories := repository.NewRepositories(depsRepo)
+	repositories := repository.NewRepositories(DB)
 
 	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("Order-service", ctx)
 
@@ -108,7 +102,6 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}
 
 	mencache := mencache.NewMencache(&mencache.Deps{
-		Ctx:    ctx,
 		Redis:  myredis,
 		Logger: logger,
 	})
@@ -157,6 +150,10 @@ func (s *Server) Run() {
 				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
+		),
+		grpc.ChainUnaryInterceptor(
+			middleware.RecoveryMiddleware(s.Logger),
+			middleware.ContextMiddleware(60*time.Second, s.Logger),
 		),
 	)
 

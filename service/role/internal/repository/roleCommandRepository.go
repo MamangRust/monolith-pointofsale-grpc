@@ -14,20 +14,18 @@ import (
 
 type roleCommandRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.RoleRecordMapping
 }
 
-func NewRoleCommandRepository(db *db.Queries, ctx context.Context, mapping recordmapper.RoleRecordMapping) *roleCommandRepository {
+func NewRoleCommandRepository(db *db.Queries, mapping recordmapper.RoleRecordMapping) *roleCommandRepository {
 	return &roleCommandRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r *roleCommandRepository) CreateRole(req *requests.CreateRoleRequest) (*record.RoleRecord, error) {
-	res, err := r.db.CreateRole(r.ctx, req.Name)
+func (r *roleCommandRepository) CreateRole(ctx context.Context, req *requests.CreateRoleRequest) (*record.RoleRecord, error) {
+	res, err := r.db.CreateRole(ctx, req.Name)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create role: invalid name '%s' or duplicate role", req.Name)
@@ -36,8 +34,8 @@ func (r *roleCommandRepository) CreateRole(req *requests.CreateRoleRequest) (*re
 	return r.mapping.ToRoleRecord(res), nil
 }
 
-func (r *roleCommandRepository) UpdateRole(req *requests.UpdateRoleRequest) (*record.RoleRecord, error) {
-	res, err := r.db.UpdateRole(r.ctx, db.UpdateRoleParams{
+func (r *roleCommandRepository) UpdateRole(ctx context.Context, req *requests.UpdateRoleRequest) (*record.RoleRecord, error) {
+	res, err := r.db.UpdateRole(ctx, db.UpdateRoleParams{
 		RoleID:   int32(*req.ID),
 		RoleName: req.Name,
 	})
@@ -49,8 +47,8 @@ func (r *roleCommandRepository) UpdateRole(req *requests.UpdateRoleRequest) (*re
 	return r.mapping.ToRoleRecord(res), nil
 }
 
-func (r *roleCommandRepository) TrashedRole(id int) (*record.RoleRecord, error) {
-	res, err := r.db.TrashRole(r.ctx, int32(id))
+func (r *roleCommandRepository) TrashedRole(ctx context.Context, id int) (*record.RoleRecord, error) {
+	res, err := r.db.TrashRole(ctx, int32(id))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -62,8 +60,8 @@ func (r *roleCommandRepository) TrashedRole(id int) (*record.RoleRecord, error) 
 	return r.mapping.ToRoleRecord(res), nil
 }
 
-func (r *roleCommandRepository) RestoreRole(id int) (*record.RoleRecord, error) {
-	res, err := r.db.RestoreRole(r.ctx, int32(id))
+func (r *roleCommandRepository) RestoreRole(ctx context.Context, id int) (*record.RoleRecord, error) {
+	res, err := r.db.RestoreRole(ctx, int32(id))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -75,8 +73,8 @@ func (r *roleCommandRepository) RestoreRole(id int) (*record.RoleRecord, error) 
 	return r.mapping.ToRoleRecord(res), nil
 }
 
-func (r *roleCommandRepository) DeleteRolePermanent(role_id int) (bool, error) {
-	err := r.db.DeletePermanentRole(r.ctx, int32(role_id))
+func (r *roleCommandRepository) DeleteRolePermanent(ctx context.Context, role_id int) (bool, error) {
+	err := r.db.DeletePermanentRole(ctx, int32(role_id))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -88,8 +86,8 @@ func (r *roleCommandRepository) DeleteRolePermanent(role_id int) (bool, error) {
 	return true, nil
 }
 
-func (r *roleCommandRepository) RestoreAllRole() (bool, error) {
-	err := r.db.RestoreAllRoles(r.ctx)
+func (r *roleCommandRepository) RestoreAllRole(ctx context.Context) (bool, error) {
+	err := r.db.RestoreAllRoles(ctx)
 
 	if err != nil {
 		return false, fmt.Errorf("no trashed roles available to restore")
@@ -98,8 +96,8 @@ func (r *roleCommandRepository) RestoreAllRole() (bool, error) {
 	return true, nil
 }
 
-func (r *roleCommandRepository) DeleteAllRolePermanent() (bool, error) {
-	err := r.db.DeleteAllPermanentRoles(r.ctx)
+func (r *roleCommandRepository) DeleteAllRolePermanent(ctx context.Context) (bool, error) {
+	err := r.db.DeleteAllPermanentRoles(ctx)
 
 	if err != nil {
 		return false, fmt.Errorf("cannot permanently delete all roles: operation disabled for system protection")

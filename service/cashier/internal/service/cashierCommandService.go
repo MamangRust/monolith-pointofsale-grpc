@@ -22,7 +22,6 @@ import (
 )
 
 type cashierCommandService struct {
-	ctx             context.Context
 	mencache        mencache.CashierCommandCache
 	errorHandler    errorhandler.CashierCommadError
 	trace           trace.Tracer
@@ -35,7 +34,7 @@ type cashierCommandService struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewCashierCommandService(ctx context.Context,
+func NewCashierCommandService(
 	mencache mencache.CashierCommandCache,
 	errorHandler errorhandler.CashierCommadError,
 	merchantQuery repository.MerchantQueryRepository,
@@ -63,7 +62,6 @@ func NewCashierCommandService(ctx context.Context,
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &cashierCommandService{
-		ctx:             ctx,
 		mencache:        mencache,
 		errorHandler:    errorHandler,
 		trace:           otel.Tracer("cashier-command-service"),
@@ -77,26 +75,26 @@ func NewCashierCommandService(ctx context.Context,
 	}
 }
 
-func (s *cashierCommandService) CreateCashier(req *requests.CreateCashierRequest) (*response.CashierResponse, *response.ErrorResponse) {
+func (s *cashierCommandService) CreateCashier(ctx context.Context, req *requests.CreateCashierRequest) (*response.CashierResponse, *response.ErrorResponse) {
 	const method = "CreateCashier"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	_, err := s.merchantQuery.FindById(req.MerchantID)
+	_, err := s.merchantQuery.FindById(ctx, req.MerchantID)
 	if err != nil {
 		return errorhandler.HandleRepositorySingleError[*response.CashierResponse](s.logger, err, method, "FAILED_FIND_MERCHANT", span, &status, merchant_errors.ErrFailedFindMerchantById, zap.Error(err))
 	}
 
-	_, err = s.userQuery.FindById(req.UserID)
+	_, err = s.userQuery.FindById(ctx, req.UserID)
 	if err != nil {
 		return errorhandler.HandleRepositorySingleError[*response.CashierResponse](s.logger, err, method, "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Error(err))
 	}
 
-	cashier, err := s.cashierCommand.CreateCashier(req)
+	cashier, err := s.cashierCommand.CreateCashier(ctx, req)
 	if err != nil {
 		return s.errorHandler.HandleCreateCashierError(err, method, "FAILED_CREATE_CASHIER", span, &status, zap.Error(err))
 	}
@@ -108,16 +106,16 @@ func (s *cashierCommandService) CreateCashier(req *requests.CreateCashierRequest
 	return so, nil
 }
 
-func (s *cashierCommandService) UpdateCashier(req *requests.UpdateCashierRequest) (*response.CashierResponse, *response.ErrorResponse) {
+func (s *cashierCommandService) UpdateCashier(ctx context.Context, req *requests.UpdateCashierRequest) (*response.CashierResponse, *response.ErrorResponse) {
 	const method = "UpdateCashier"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	cashier, err := s.cashierCommand.UpdateCashier(req)
+	cashier, err := s.cashierCommand.UpdateCashier(ctx, req)
 	if err != nil {
 		return s.errorHandler.HandleUpdateCashierError(err, method, "FAILED_UPDATE_CASHIER", span, &status, zap.Error(err))
 	}
@@ -128,23 +126,23 @@ func (s *cashierCommandService) UpdateCashier(req *requests.UpdateCashierRequest
 
 	so := s.mapping.ToCashierResponse(cashier)
 
-	s.mencache.DeleteCashierCache(cashier.ID)
+	s.mencache.DeleteCashierCache(ctx, cashier.ID)
 
 	logSuccess("Successfully updated cashier", zap.Bool("success", true))
 
 	return so, nil
 }
 
-func (s *cashierCommandService) TrashedCashier(cashierID int) (*response.CashierResponseDeleteAt, *response.ErrorResponse) {
+func (s *cashierCommandService) TrashedCashier(ctx context.Context, cashierID int) (*response.CashierResponseDeleteAt, *response.ErrorResponse) {
 	const method = "TrashedCashier"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	cashier, err := s.cashierCommand.TrashedCashier(cashierID)
+	cashier, err := s.cashierCommand.TrashedCashier(ctx, cashierID)
 
 	if err != nil {
 		return s.errorHandler.HandleTrashedCashierError(err, method, "FAILED_TRASHED_CASHIER", span, &status, zap.Error(err))
@@ -157,16 +155,16 @@ func (s *cashierCommandService) TrashedCashier(cashierID int) (*response.Cashier
 	return so, nil
 }
 
-func (s *cashierCommandService) RestoreCashier(cashierID int) (*response.CashierResponseDeleteAt, *response.ErrorResponse) {
+func (s *cashierCommandService) RestoreCashier(ctx context.Context, cashierID int) (*response.CashierResponseDeleteAt, *response.ErrorResponse) {
 	const method = "RestoreCashier"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	cashier, err := s.cashierCommand.RestoreCashier(cashierID)
+	cashier, err := s.cashierCommand.RestoreCashier(ctx, cashierID)
 
 	if err != nil {
 		return s.errorHandler.HandleRestoreCashierError(err, method, "FAILED_RESTORE_CASHIER", span, &status, zap.Error(err))
@@ -179,16 +177,16 @@ func (s *cashierCommandService) RestoreCashier(cashierID int) (*response.Cashier
 	return so, nil
 }
 
-func (s *cashierCommandService) DeleteCashierPermanent(cashierID int) (bool, *response.ErrorResponse) {
+func (s *cashierCommandService) DeleteCashierPermanent(ctx context.Context, cashierID int) (bool, *response.ErrorResponse) {
 	const method = "DeleteCashierPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	success, err := s.cashierCommand.DeleteCashierPermanent(cashierID)
+	success, err := s.cashierCommand.DeleteCashierPermanent(ctx, cashierID)
 
 	if err != nil {
 		return s.errorHandler.HandleDeleteCashierPermanentError(err, method, "FAILED_DELETE_CASHIER_PERMANENT", span, &status, zap.Error(err))
@@ -199,16 +197,16 @@ func (s *cashierCommandService) DeleteCashierPermanent(cashierID int) (bool, *re
 	return success, nil
 }
 
-func (s *cashierCommandService) RestoreAllCashier() (bool, *response.ErrorResponse) {
+func (s *cashierCommandService) RestoreAllCashier(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "RestoreAllCashier"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	success, err := s.cashierCommand.RestoreAllCashier()
+	success, err := s.cashierCommand.RestoreAllCashier(ctx)
 
 	if err != nil {
 		return s.errorHandler.HandleRestoreAllCashierError(err, method, "FAILED_RESTORE_ALL_CASHIERS", span, &status, zap.Error(err))
@@ -219,16 +217,16 @@ func (s *cashierCommandService) RestoreAllCashier() (bool, *response.ErrorRespon
 	return success, nil
 }
 
-func (s *cashierCommandService) DeleteAllCashierPermanent() (bool, *response.ErrorResponse) {
+func (s *cashierCommandService) DeleteAllCashierPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
 	const method = "DeleteAllCashierPermanent"
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method)
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
 	}()
 
-	success, err := s.cashierCommand.DeleteAllCashierPermanent()
+	success, err := s.cashierCommand.DeleteAllCashierPermanent(ctx)
 
 	if err != nil {
 		return s.errorHandler.HandleDeleteAllCashierPermanentError(err, method, "FAILED_DELETE_ALL_CASHIERS_PERMANENT", span, &status, zap.Error(err))
@@ -239,7 +237,8 @@ func (s *cashierCommandService) DeleteAllCashierPermanent() (bool, *response.Err
 	return success, nil
 }
 
-func (s *cashierCommandService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+func (s *cashierCommandService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
+	context.Context,
 	trace.Span,
 	func(string),
 	string,
@@ -248,7 +247,7 @@ func (s *cashierCommandService) startTracingAndLogging(method string, attrs ...a
 	start := time.Now()
 	status := "success"
 
-	_, span := s.trace.Start(s.ctx, method)
+	ctx, span := s.trace.Start(ctx, method)
 
 	if len(attrs) > 0 {
 		span.SetAttributes(attrs...)
@@ -273,7 +272,7 @@ func (s *cashierCommandService) startTracingAndLogging(method string, attrs ...a
 		s.logger.Debug(msg, fields...)
 	}
 
-	return span, end, status, logSuccess
+	return ctx, span, end, status, logSuccess
 }
 
 func (s *cashierCommandService) recordMetrics(method string, status string, start time.Time) {

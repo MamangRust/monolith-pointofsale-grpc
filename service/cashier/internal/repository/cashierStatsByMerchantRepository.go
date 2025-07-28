@@ -14,25 +14,23 @@ import (
 
 type cashierStatsByMerchantRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.CashierRecordMapping
 }
 
-func NewCashierStatsByMerchantRepository(db *db.Queries, ctx context.Context, mapping recordmapper.CashierRecordMapping) *cashierStatsByMerchantRepository {
+func NewCashierStatsByMerchantRepository(db *db.Queries, mapping recordmapper.CashierRecordMapping) *cashierStatsByMerchantRepository {
 	return &cashierStatsByMerchantRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r *cashierStatsByMerchantRepository) GetMonthlyTotalSalesByMerchant(req *requests.MonthTotalSalesMerchant) ([]*record.CashierRecordMonthTotalSales, error) {
+func (r *cashierStatsByMerchantRepository) GetMonthlyTotalSalesByMerchant(ctx context.Context, req *requests.MonthTotalSalesMerchant) ([]*record.CashierRecordMonthTotalSales, error) {
 	currentMonthStart := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	currentMonthEnd := currentMonthStart.AddDate(0, 1, -1)
 	prevMonthStart := currentMonthStart.AddDate(0, -1, 0)
 	prevMonthEnd := prevMonthStart.AddDate(0, 1, -1)
 
-	res, err := r.db.GetMonthlyTotalSalesByMerchant(r.ctx, db.GetMonthlyTotalSalesByMerchantParams{
+	res, err := r.db.GetMonthlyTotalSalesByMerchant(ctx, db.GetMonthlyTotalSalesByMerchantParams{
 		Extract:     currentMonthStart,
 		CreatedAt:   sql.NullTime{Time: currentMonthEnd, Valid: true},
 		CreatedAt_2: sql.NullTime{Time: prevMonthStart, Valid: true},
@@ -49,8 +47,8 @@ func (r *cashierStatsByMerchantRepository) GetMonthlyTotalSalesByMerchant(req *r
 	return so, nil
 }
 
-func (r *cashierStatsByMerchantRepository) GetYearlyTotalSalesByMerchant(req *requests.YearTotalSalesMerchant) ([]*record.CashierRecordYearTotalSales, error) {
-	res, err := r.db.GetYearlyTotalSalesByMerchant(r.ctx, db.GetYearlyTotalSalesByMerchantParams{
+func (r *cashierStatsByMerchantRepository) GetYearlyTotalSalesByMerchant(ctx context.Context, req *requests.YearTotalSalesMerchant) ([]*record.CashierRecordYearTotalSales, error) {
+	res, err := r.db.GetYearlyTotalSalesByMerchant(ctx, db.GetYearlyTotalSalesByMerchantParams{
 		Column1:    int32(req.Year),
 		MerchantID: int32(req.MerchantID),
 	})
@@ -64,10 +62,10 @@ func (r *cashierStatsByMerchantRepository) GetYearlyTotalSalesByMerchant(req *re
 	return so, nil
 }
 
-func (r *cashierStatsByMerchantRepository) GetMonthlyCashierByMerchant(req *requests.MonthCashierMerchant) ([]*record.CashierRecordMonthSales, error) {
+func (r *cashierStatsByMerchantRepository) GetMonthlyCashierByMerchant(ctx context.Context, req *requests.MonthCashierMerchant) ([]*record.CashierRecordMonthSales, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	res, err := r.db.GetMonthlyCashierByMerchant(r.ctx, db.GetMonthlyCashierByMerchantParams{
+	res, err := r.db.GetMonthlyCashierByMerchant(ctx, db.GetMonthlyCashierByMerchantParams{
 		Column1:    yearStart,
 		MerchantID: int32(req.MerchantID),
 	})
@@ -80,10 +78,10 @@ func (r *cashierStatsByMerchantRepository) GetMonthlyCashierByMerchant(req *requ
 
 }
 
-func (r *cashierStatsByMerchantRepository) GetYearlyCashierByMerchant(req *requests.YearCashierMerchant) ([]*record.CashierRecordYearSales, error) {
+func (r *cashierStatsByMerchantRepository) GetYearlyCashierByMerchant(ctx context.Context, req *requests.YearCashierMerchant) ([]*record.CashierRecordYearSales, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	res, err := r.db.GetYearlyCashierByMerchant(r.ctx, db.GetYearlyCashierByMerchantParams{
+	res, err := r.db.GetYearlyCashierByMerchant(ctx, db.GetYearlyCashierByMerchantParams{
 		Column1:    yearStart,
 		MerchantID: int32(req.Year),
 	})

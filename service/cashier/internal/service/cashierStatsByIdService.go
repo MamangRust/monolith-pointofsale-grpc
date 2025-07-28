@@ -20,7 +20,6 @@ import (
 )
 
 type cashierStatsByIdService struct {
-	ctx             context.Context
 	mencache        mencache.CashierStatsByIdCache
 	errorhandler    errorhandler.CashierStatsByIdError
 	trace           trace.Tracer
@@ -31,7 +30,7 @@ type cashierStatsByIdService struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewCashierStatsByIdService(ctx context.Context,
+func NewCashierStatsByIdService(
 	mencache mencache.CashierStatsByIdCache,
 	errorhandler errorhandler.CashierStatsByIdError,
 	cashierStats repository.CashierStatByIdRepository,
@@ -57,7 +56,6 @@ func NewCashierStatsByIdService(ctx context.Context,
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &cashierStatsByIdService{
-		ctx:             ctx,
 		mencache:        mencache,
 		errorhandler:    errorhandler,
 		trace:           otel.Tracer("cashier-stats-by-id-service"),
@@ -69,25 +67,25 @@ func NewCashierStatsByIdService(ctx context.Context,
 	}
 }
 
-func (s *cashierStatsByIdService) FindMonthlyTotalSalesById(req *requests.MonthTotalSalesCashier) ([]*response.CashierResponseMonthTotalSales, *response.ErrorResponse) {
+func (s *cashierStatsByIdService) FindMonthlyTotalSalesById(ctx context.Context, req *requests.MonthTotalSalesCashier) ([]*response.CashierResponseMonthTotalSales, *response.ErrorResponse) {
 	const method = "FindMonthlyTotalSalesById"
 
 	month := req.Month
 	year := req.Year
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.Int("month", month))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("year", year), attribute.Int("month", month))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetMonthlyTotalSalesByIdCache(req); found {
+	if data, found := s.mencache.GetMonthlyTotalSalesByIdCache(ctx, req); found {
 		logSuccess("Successfully fetched monthly total sales by ID from cache", zap.Int("year", year), zap.Int("month", month))
 
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetMonthlyTotalSalesById(req)
+	res, err := s.cashierStats.GetMonthlyTotalSalesById(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleMonthlyTotalSalesByIdError(err, method, "FAILED_FIND_MONTHLY_TOTAL_SALES_BY_ID", span, &status, zap.Error(err))
@@ -95,32 +93,32 @@ func (s *cashierStatsByIdService) FindMonthlyTotalSalesById(req *requests.MonthT
 
 	so := s.mapping.ToCashierMonthlyTotalSales(res)
 
-	s.mencache.SetMonthlyTotalSalesByIdCache(req, so)
+	s.mencache.SetMonthlyTotalSalesByIdCache(ctx, req, so)
 
 	logSuccess("Successfully fetched monthly total sales by ID", zap.Int("year", year), zap.Int("month", month))
 
 	return so, nil
 }
 
-func (s *cashierStatsByIdService) FindYearlyTotalSalesById(req *requests.YearTotalSalesCashier) ([]*response.CashierResponseYearTotalSales, *response.ErrorResponse) {
+func (s *cashierStatsByIdService) FindYearlyTotalSalesById(ctx context.Context, req *requests.YearTotalSalesCashier) ([]*response.CashierResponseYearTotalSales, *response.ErrorResponse) {
 	const method = "FindMonthlyTotalSalesById"
 
 	year := req.Year
 	cashier_id := req.CashierID
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.Int("cashier_id", cashier_id))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("year", year), attribute.Int("cashier_id", cashier_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetYearlyTotalSalesByIdCache(req); found {
+	if data, found := s.mencache.GetYearlyTotalSalesByIdCache(ctx, req); found {
 		logSuccess("Successfully fetched yearly total sales by ID from cache", zap.Int("year", year), zap.Int("cashier_id", cashier_id))
 
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetYearlyTotalSalesById(req)
+	res, err := s.cashierStats.GetYearlyTotalSalesById(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleYearlyTotalSalesByIdError(err, method, "FAILED_FIND_YEARLY_TOTAL_SALES_BY_ID", span, &status, zap.Error(err))
@@ -128,32 +126,32 @@ func (s *cashierStatsByIdService) FindYearlyTotalSalesById(req *requests.YearTot
 
 	so := s.mapping.ToCashierYearlyTotalSales(res)
 
-	s.mencache.SetYearlyTotalSalesByIdCache(req, so)
+	s.mencache.SetYearlyTotalSalesByIdCache(ctx, req, so)
 
 	logSuccess("Successfully fetched yearly total sales by ID", zap.Int("year", year), zap.Int("cashier_id", cashier_id))
 
 	return so, nil
 }
 
-func (s *cashierStatsByIdService) FindMonthlyCashierById(req *requests.MonthCashierId) ([]*response.CashierResponseMonthSales, *response.ErrorResponse) {
+func (s *cashierStatsByIdService) FindMonthlyCashierById(ctx context.Context, req *requests.MonthCashierId) ([]*response.CashierResponseMonthSales, *response.ErrorResponse) {
 	const method = "FindMonthlyCashierById"
 
 	year := req.Year
 	cashier_id := req.CashierID
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.Int("cashier.id", cashier_id))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("year", year), attribute.Int("cashier.id", cashier_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetMonthlyCashierByIdCache(req); found {
+	if data, found := s.mencache.GetMonthlyCashierByIdCache(ctx, req); found {
 		logSuccess("Successfully fetched monthly cashier sales by ID from cache", zap.Int("year", year), zap.Int("cashier_id", cashier_id))
 
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetMonthlyCashierById(req)
+	res, err := s.cashierStats.GetMonthlyCashierById(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleMonthlySalesByIdError(err, method, "FAILED_FIND_MONTHLY_CASHIER_BY_ID", span, &status, zap.Error(err))
@@ -161,32 +159,32 @@ func (s *cashierStatsByIdService) FindMonthlyCashierById(req *requests.MonthCash
 
 	so := s.mapping.ToCashierMonthlySales(res)
 
-	s.mencache.SetMonthlyCashierByIdCache(req, so)
+	s.mencache.SetMonthlyCashierByIdCache(ctx, req, so)
 
 	logSuccess("Successfully fetched monthly cashier sales by ID", zap.Int("year", year), zap.Int("cashier_id", cashier_id))
 
 	return so, nil
 }
 
-func (s *cashierStatsByIdService) FindYearlyCashierById(req *requests.YearCashierId) ([]*response.CashierResponseYearSales, *response.ErrorResponse) {
+func (s *cashierStatsByIdService) FindYearlyCashierById(ctx context.Context, req *requests.YearCashierId) ([]*response.CashierResponseYearSales, *response.ErrorResponse) {
 	const method = "FindMonthlyCashierById"
 
 	year := req.Year
 	cashier_id := req.CashierID
 
-	span, end, status, logSuccess := s.startTracingAndLogging(method, attribute.Int("year", year), attribute.Int("cashier.id", cashier_id))
+	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("year", year), attribute.Int("cashier.id", cashier_id))
 
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetYearlyCashierByIdCache(req); found {
+	if data, found := s.mencache.GetYearlyCashierByIdCache(ctx, req); found {
 		logSuccess("Successfully fetched yearly cashier sales by ID from cache", zap.Int("year", year), zap.Int("cashier_id", cashier_id))
 
 		return data, nil
 	}
 
-	res, err := s.cashierStats.GetYearlyCashierById(req)
+	res, err := s.cashierStats.GetYearlyCashierById(ctx, req)
 
 	if err != nil {
 		return s.errorhandler.HandleYearlySalesByIdError(err, method, "FAILED_FIND_YEARLY_CASHIER_BY_ID", span, &status, zap.Error(err))
@@ -194,14 +192,15 @@ func (s *cashierStatsByIdService) FindYearlyCashierById(req *requests.YearCashie
 
 	so := s.mapping.ToCashierYearlySales(res)
 
-	s.mencache.SetYearlyCashierByIdCache(req, so)
+	s.mencache.SetYearlyCashierByIdCache(ctx, req, so)
 
 	logSuccess("Successfully fetched yearly cashier sales by ID", zap.Int("year", year), zap.Int("cashier_id", cashier_id))
 
 	return so, nil
 }
 
-func (s *cashierStatsByIdService) startTracingAndLogging(method string, attrs ...attribute.KeyValue) (
+func (s *cashierStatsByIdService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
+	context.Context,
 	trace.Span,
 	func(string),
 	string,
@@ -210,7 +209,7 @@ func (s *cashierStatsByIdService) startTracingAndLogging(method string, attrs ..
 	start := time.Now()
 	status := "success"
 
-	_, span := s.trace.Start(s.ctx, method)
+	ctx, span := s.trace.Start(ctx, method)
 
 	if len(attrs) > 0 {
 		span.SetAttributes(attrs...)
@@ -235,7 +234,7 @@ func (s *cashierStatsByIdService) startTracingAndLogging(method string, attrs ..
 		s.logger.Debug(msg, fields...)
 	}
 
-	return span, end, status, logSuccess
+	return ctx, span, end, status, logSuccess
 }
 
 func (s *cashierStatsByIdService) recordMetrics(method string, status string, start time.Time) {

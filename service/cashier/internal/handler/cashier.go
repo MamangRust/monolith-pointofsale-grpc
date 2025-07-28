@@ -54,7 +54,7 @@ func (s *cashierHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllCash
 		PageSize: pageSize,
 	}
 
-	cashier, totalRecords, err := s.cashierQuery.FindAll(&reqService)
+	cashier, totalRecords, err := s.cashierQuery.FindAll(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -80,7 +80,7 @@ func (s *cashierHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdCa
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	cashier, err := s.cashierQuery.FindById(id)
+	cashier, err := s.cashierQuery.FindById(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -109,7 +109,7 @@ func (s *cashierHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAl
 		PageSize: pageSize,
 	}
 
-	cashier, totalRecords, err := s.cashierQuery.FindByActive(&reqService)
+	cashier, totalRecords, err := s.cashierQuery.FindByActive(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -147,7 +147,7 @@ func (s *cashierHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindA
 		PageSize: pageSize,
 	}
 
-	users, totalRecords, err := s.cashierQuery.FindByTrashed(&reqService)
+	users, totalRecords, err := s.cashierQuery.FindByTrashed(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -191,7 +191,7 @@ func (s *cashierHandleGrpc) FindByMerchant(ctx context.Context, request *pb.Find
 		MerchantID: merchant_id,
 	}
 
-	cashier, totalRecords, err := s.cashierQuery.FindByMerchant(&reqService)
+	cashier, totalRecords, err := s.cashierQuery.FindByMerchant(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -227,7 +227,7 @@ func (s *cashierHandleGrpc) FindMonthlyTotalSales(ctx context.Context, req *pb.F
 		Month: month,
 	}
 
-	methods, err := s.cashierStats.FindMonthlyTotalSales(&reqService)
+	methods, err := s.cashierStats.FindMonthlyTotalSales(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -243,7 +243,7 @@ func (s *cashierHandleGrpc) FindYearlyTotalSales(ctx context.Context, req *pb.Fi
 		return nil, cashier_errors.ErrGrpcFailedInvalidYear
 	}
 
-	methods, err := s.cashierStats.FindYearlyTotalSales(year)
+	methods, err := s.cashierStats.FindYearlyTotalSales(ctx, year)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -275,7 +275,7 @@ func (s *cashierHandleGrpc) FindMonthlyTotalSalesById(ctx context.Context, req *
 		CashierID: id,
 	}
 
-	methods, err := s.cashierStatsById.FindMonthlyTotalSalesById(&reqService)
+	methods, err := s.cashierStatsById.FindMonthlyTotalSalesById(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -301,7 +301,7 @@ func (s *cashierHandleGrpc) FindYearlyTotalSalesById(ctx context.Context, req *p
 		CashierID: id,
 	}
 
-	methods, err := s.cashierStatsById.FindYearlyTotalSalesById(&reqService)
+	methods, err := s.cashierStatsById.FindYearlyTotalSalesById(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -333,7 +333,7 @@ func (s *cashierHandleGrpc) FindMonthlyTotalSalesByMerchant(ctx context.Context,
 		MerchantID: merchantId,
 	}
 
-	methods, err := s.cashierStatsByMerchant.FindMonthlyTotalSalesByMerchant(&reqService)
+	methods, err := s.cashierStatsByMerchant.FindMonthlyTotalSalesByMerchant(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -359,7 +359,7 @@ func (s *cashierHandleGrpc) FindYearlyTotalSalesByMerchant(ctx context.Context, 
 		MerchantID: merchantId,
 	}
 
-	methods, err := s.cashierStatsByMerchant.FindYearlyTotalSalesByMerchant(&reqService)
+	methods, err := s.cashierStatsByMerchant.FindYearlyTotalSalesByMerchant(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -375,7 +375,7 @@ func (s *cashierHandleGrpc) FindMonthSales(ctx context.Context, req *pb.FindYear
 		return nil, cashier_errors.ErrGrpcFailedInvalidYear
 	}
 
-	methods, err := s.cashierStats.FindMonthlySales(year)
+	methods, err := s.cashierStats.FindMonthlySales(ctx, year)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -391,7 +391,7 @@ func (s *cashierHandleGrpc) FindYearSales(ctx context.Context, req *pb.FindYearC
 		return nil, cashier_errors.ErrGrpcFailedInvalidYear
 	}
 
-	methods, err := s.cashierStats.FindYearlySales(year)
+	methods, err := s.cashierStats.FindYearlySales(ctx, year)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -418,6 +418,7 @@ func (s *cashierHandleGrpc) FindMonthSalesByMerchant(ctx context.Context, req *p
 	}
 
 	methods, err := s.cashierStatsByMerchant.FindMonthlyCashierByMerchant(
+		ctx,
 		&reqService,
 	)
 
@@ -446,6 +447,7 @@ func (s *cashierHandleGrpc) FindYearSalesByMerchant(ctx context.Context, req *pb
 	}
 
 	methods, err := s.cashierStatsByMerchant.FindYearlyCashierByMerchant(
+		ctx,
 		&reqService,
 	)
 
@@ -474,6 +476,7 @@ func (s *cashierHandleGrpc) FindMonthSalesById(ctx context.Context, req *pb.Find
 	}
 
 	methods, err := s.cashierStatsById.FindMonthlyCashierById(
+		ctx,
 		&reqService,
 	)
 
@@ -502,6 +505,7 @@ func (s *cashierHandleGrpc) FindYearSalesById(ctx context.Context, req *pb.FindY
 	}
 
 	methods, err := s.cashierStatsById.FindYearlyCashierById(
+		ctx,
 		&reqService,
 	)
 
@@ -523,7 +527,7 @@ func (s *cashierHandleGrpc) CreateCashier(ctx context.Context, request *pb.Creat
 		return nil, cashier_errors.ErrGrpcValidateCreateCashier
 	}
 
-	cashier, err := s.cashierCommand.CreateCashier(req)
+	cashier, err := s.cashierCommand.CreateCashier(ctx, req)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -549,7 +553,7 @@ func (s *cashierHandleGrpc) UpdateCashier(ctx context.Context, request *pb.Updat
 		return nil, cashier_errors.ErrGrpcValidateUpdateCashier
 	}
 
-	cashier, err := s.cashierCommand.UpdateCashier(req)
+	cashier, err := s.cashierCommand.UpdateCashier(ctx, req)
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
@@ -565,7 +569,7 @@ func (s *cashierHandleGrpc) TrashedCashier(ctx context.Context, request *pb.Find
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	cashier, err := s.cashierCommand.TrashedCashier(id)
+	cashier, err := s.cashierCommand.TrashedCashier(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -583,7 +587,7 @@ func (s *cashierHandleGrpc) RestoreCashier(ctx context.Context, request *pb.Find
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	cashier, err := s.cashierCommand.RestoreCashier(id)
+	cashier, err := s.cashierCommand.RestoreCashier(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -601,7 +605,7 @@ func (s *cashierHandleGrpc) DeleteCashierPermanent(ctx context.Context, request 
 		return nil, cashier_errors.ErrGrpcFailedInvalidId
 	}
 
-	_, err := s.cashierCommand.DeleteCashierPermanent(id)
+	_, err := s.cashierCommand.DeleteCashierPermanent(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -613,7 +617,7 @@ func (s *cashierHandleGrpc) DeleteCashierPermanent(ctx context.Context, request 
 }
 
 func (s *cashierHandleGrpc) RestoreAllCashier(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseCashierAll, error) {
-	_, err := s.cashierCommand.RestoreAllCashier()
+	_, err := s.cashierCommand.RestoreAllCashier(ctx)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -625,7 +629,7 @@ func (s *cashierHandleGrpc) RestoreAllCashier(ctx context.Context, _ *emptypb.Em
 }
 
 func (s *cashierHandleGrpc) DeleteAllCashierPermanent(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseCashierAll, error) {
-	_, err := s.cashierCommand.DeleteAllCashierPermanent()
+	_, err := s.cashierCommand.DeleteAllCashierPermanent(ctx)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)

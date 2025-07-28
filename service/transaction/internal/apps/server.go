@@ -18,6 +18,7 @@ import (
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/errorhandler"
 	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/handler"
+	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/middleware"
 	mencache "github.com/MamangRust/monolith-point-of-sale-transacton/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/repository"
 	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/service"
@@ -51,7 +52,7 @@ type Server struct {
 	Ctx      context.Context
 }
 
-func NewServer() (*Server, func(context.Context) error, error) {
+func NewServer(ctx context.Context) (*Server, func(context.Context) error, error) {
 	logger, err := logger.NewLogger("transaction")
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to initialize logger: %w", err)
@@ -68,14 +69,7 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}
 	DB := db.New(conn)
 
-	ctx := context.Background()
-
-	depsRepo := &repository.Deps{
-		DB:  DB,
-		Ctx: ctx,
-	}
-
-	repositories := repository.NewRepositories(depsRepo)
+	repositories := repository.NewRepositories(DB)
 	myKafka := kafka.NewKafka(logger, []string{viper.GetString("KAFKA_BROKERS")})
 
 	shutdownTracerProvider, err := otel_pkg.InitTracerProvider("Transaction-service", ctx)
@@ -104,7 +98,6 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	}
 
 	mencache := mencache.NewMencache(&mencache.Deps{
-		Ctx:    ctx,
 		Redis:  myredis,
 		Logger: logger,
 	})
@@ -112,7 +105,6 @@ func NewServer() (*Server, func(context.Context) error, error) {
 	errorhandler := errorhandler.NewErrorHandler(logger)
 
 	services := service.NewService(&service.Deps{
-		Ctx:          ctx,
 		Mencache:     mencache,
 		ErrorHandler: errorhandler,
 		Repositories: repositories,
@@ -154,6 +146,10 @@ func (s *Server) Run() {
 				otelgrpc.WithTracerProvider(otel.GetTracerProvider()),
 				otelgrpc.WithPropagators(otel.GetTextMapPropagator()),
 			),
+		),
+		grpc.ChainUnaryInterceptor(
+			middleware.RecoveryMiddleware(s.Logger),
+			middleware.ContextMiddleware(60*time.Second, s.Logger),
 		),
 	)
 

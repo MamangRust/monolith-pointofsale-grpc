@@ -47,7 +47,7 @@ func (s *productHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllProd
 		Search:   search,
 	}
 
-	product, totalRecords, err := s.productQueryService.FindAll(&reqService)
+	product, totalRecords, err := s.productQueryService.FindAll(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -98,7 +98,7 @@ func (s *productHandleGrpc) FindByMerchant(ctx context.Context, request *pb.Find
 		MaxPrice:   &max_price,
 	}
 
-	product, totalRecords, err := s.productQueryService.FindByMerchant(&reqService)
+	product, totalRecords, err := s.productQueryService.FindByMerchant(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -149,7 +149,7 @@ func (s *productHandleGrpc) FindByCategory(ctx context.Context, request *pb.Find
 		MaxPrice:     &max_price,
 	}
 
-	product, totalRecords, err := s.productQueryService.FindByCategory(&reqService)
+	product, totalRecords, err := s.productQueryService.FindByCategory(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -175,7 +175,7 @@ func (s *productHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdPr
 		return nil, product_errors.ErrGrpcInvalidID
 	}
 
-	product, err := s.productQueryService.FindById(id)
+	product, err := s.productQueryService.FindById(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -205,7 +205,7 @@ func (s *productHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAl
 		Search:   search,
 	}
 
-	product, totalRecords, err := s.productQueryService.FindByActive(&reqService)
+	product, totalRecords, err := s.productQueryService.FindByActive(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -242,7 +242,7 @@ func (s *productHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindA
 		Search:   search,
 	}
 
-	users, totalRecords, err := s.productQueryService.FindByTrashed(&reqService)
+	users, totalRecords, err := s.productQueryService.FindByTrashed(ctx, &reqService)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -279,7 +279,7 @@ func (s *productHandleGrpc) Create(ctx context.Context, request *pb.CreateProduc
 		return nil, product_errors.ErrGrpcValidateCreateProduct
 	}
 
-	product, err := s.productCommandService.CreateProduct(req)
+	product, err := s.productCommandService.CreateProduct(ctx, req)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -313,7 +313,7 @@ func (s *productHandleGrpc) Update(ctx context.Context, request *pb.UpdateProduc
 		return nil, product_errors.ErrGrpcValidateUpdateProduct
 	}
 
-	product, err := s.productCommandService.UpdateProduct(req)
+	product, err := s.productCommandService.UpdateProduct(ctx, req)
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
 	}
@@ -329,7 +329,7 @@ func (s *productHandleGrpc) TrashedProduct(ctx context.Context, request *pb.Find
 		return nil, product_errors.ErrGrpcInvalidID
 	}
 
-	product, err := s.productCommandService.TrashProduct(id)
+	product, err := s.productCommandService.TrashProduct(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -347,7 +347,7 @@ func (s *productHandleGrpc) RestoreProduct(ctx context.Context, request *pb.Find
 		return nil, product_errors.ErrGrpcInvalidID
 	}
 
-	product, err := s.productCommandService.RestoreProduct(id)
+	product, err := s.productCommandService.RestoreProduct(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -365,7 +365,7 @@ func (s *productHandleGrpc) DeleteProductPermanent(ctx context.Context, request 
 		return nil, product_errors.ErrGrpcInvalidID
 	}
 
-	_, err := s.productCommandService.DeleteProductPermanent(id)
+	_, err := s.productCommandService.DeleteProductPermanent(ctx, id)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -377,7 +377,7 @@ func (s *productHandleGrpc) DeleteProductPermanent(ctx context.Context, request 
 }
 
 func (s *productHandleGrpc) RestoreAllProduct(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseProductAll, error) {
-	_, err := s.productCommandService.RestoreAllProducts()
+	_, err := s.productCommandService.RestoreAllProducts(ctx)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)
@@ -389,7 +389,7 @@ func (s *productHandleGrpc) RestoreAllProduct(ctx context.Context, _ *emptypb.Em
 }
 
 func (s *productHandleGrpc) DeleteAllProductPermanent(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseProductAll, error) {
-	_, err := s.productCommandService.DeleteAllProductsPermanent()
+	_, err := s.productCommandService.DeleteAllProductsPermanent(ctx)
 
 	if err != nil {
 		return nil, response.ToGrpcErrorFromErrorResponse(err)

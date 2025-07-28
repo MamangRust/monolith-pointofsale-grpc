@@ -1,6 +1,7 @@
 package mencache
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -37,10 +38,10 @@ func NewCashierQueryCache(store *CacheStore) *cashierQueryCache {
 	return &cashierQueryCache{store: store}
 }
 
-func (s *cashierQueryCache) GetCachedCashiersCache(req *requests.FindAllCashiers) ([]*response.CashierResponse, *int, bool) {
+func (s *cashierQueryCache) GetCachedCashiersCache(ctx context.Context, req *requests.FindAllCashiers) ([]*response.CashierResponse, *int, bool) {
 	key := fmt.Sprintf(cashierAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[cashierCacheResponse](s.store, key)
+	result, found := GetFromCache[cashierCacheResponse](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -49,7 +50,7 @@ func (s *cashierQueryCache) GetCachedCashiersCache(req *requests.FindAllCashiers
 	return result.Data, result.TotalRecords, true
 }
 
-func (s *cashierQueryCache) SetCachedCashiersCache(req *requests.FindAllCashiers, data []*response.CashierResponse, total *int) {
+func (s *cashierQueryCache) SetCachedCashiersCache(ctx context.Context, req *requests.FindAllCashiers, data []*response.CashierResponse, total *int) {
 	if total == nil {
 		zero := 0
 
@@ -62,13 +63,13 @@ func (s *cashierQueryCache) SetCachedCashiersCache(req *requests.FindAllCashiers
 
 	key := fmt.Sprintf(cashierAllCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &cashierCacheResponse{Data: data, TotalRecords: total}
-	SetToCache(s.store, key, payload, ttlDefault)
+	SetToCache(ctx, s.store, key, payload, ttlDefault)
 }
 
-func (s *cashierQueryCache) GetCachedCashiersByMerchant(req *requests.FindAllCashierMerchant) ([]*response.CashierResponse, *int, bool) {
+func (s *cashierQueryCache) GetCachedCashiersByMerchant(ctx context.Context, req *requests.FindAllCashierMerchant) ([]*response.CashierResponse, *int, bool) {
 	key := fmt.Sprintf(cashierByMerchantCacheKey, req.MerchantID, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[cashierCacheResponse](s.store, key)
+	result, found := GetFromCache[cashierCacheResponse](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -77,7 +78,7 @@ func (s *cashierQueryCache) GetCachedCashiersByMerchant(req *requests.FindAllCas
 	return result.Data, result.TotalRecords, true
 }
 
-func (s *cashierQueryCache) SetCachedCashiersByMerchant(req *requests.FindAllCashierMerchant, data []*response.CashierResponse, total *int) {
+func (s *cashierQueryCache) SetCachedCashiersByMerchant(ctx context.Context, req *requests.FindAllCashierMerchant, data []*response.CashierResponse, total *int) {
 	if total == nil {
 		zero := 0
 
@@ -90,13 +91,13 @@ func (s *cashierQueryCache) SetCachedCashiersByMerchant(req *requests.FindAllCas
 
 	key := fmt.Sprintf(cashierByMerchantCacheKey, req.MerchantID, req.Page, req.PageSize, req.Search)
 	payload := &cashierCacheResponse{Data: data, TotalRecords: total}
-	SetToCache(s.store, key, payload, ttlDefault)
+	SetToCache(ctx, s.store, key, payload, ttlDefault)
 }
 
-func (s *cashierQueryCache) GetCachedCashiersActive(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, bool) {
+func (s *cashierQueryCache) GetCachedCashiersActive(ctx context.Context, req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(cashierActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[cashierCacheResponseDeleteAt](s.store, key)
+	result, found := GetFromCache[cashierCacheResponseDeleteAt](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -105,7 +106,7 @@ func (s *cashierQueryCache) GetCachedCashiersActive(req *requests.FindAllCashier
 	return result.Data, result.TotalRecords, true
 }
 
-func (s *cashierQueryCache) SetCachedCashiersActive(req *requests.FindAllCashiers, data []*response.CashierResponseDeleteAt, total *int) {
+func (s *cashierQueryCache) SetCachedCashiersActive(ctx context.Context, req *requests.FindAllCashiers, data []*response.CashierResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -117,13 +118,13 @@ func (s *cashierQueryCache) SetCachedCashiersActive(req *requests.FindAllCashier
 
 	key := fmt.Sprintf(cashierActiveCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &cashierCacheResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(s.store, key, payload, ttlDefault)
+	SetToCache(ctx, s.store, key, payload, ttlDefault)
 }
 
-func (s *cashierQueryCache) GetCachedCashiersTrashed(req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, bool) {
+func (s *cashierQueryCache) GetCachedCashiersTrashed(ctx context.Context, req *requests.FindAllCashiers) ([]*response.CashierResponseDeleteAt, *int, bool) {
 	key := fmt.Sprintf(cashierTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[cashierCacheResponseDeleteAt](s.store, key)
+	result, found := GetFromCache[cashierCacheResponseDeleteAt](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, nil, false
@@ -132,7 +133,7 @@ func (s *cashierQueryCache) GetCachedCashiersTrashed(req *requests.FindAllCashie
 	return result.Data, result.TotalRecords, true
 }
 
-func (s *cashierQueryCache) SetCachedCashiersTrashed(req *requests.FindAllCashiers, data []*response.CashierResponseDeleteAt, total *int) {
+func (s *cashierQueryCache) SetCachedCashiersTrashed(ctx context.Context, req *requests.FindAllCashiers, data []*response.CashierResponseDeleteAt, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
@@ -144,12 +145,12 @@ func (s *cashierQueryCache) SetCachedCashiersTrashed(req *requests.FindAllCashie
 
 	key := fmt.Sprintf(cashierTrashedCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &cashierCacheResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(s.store, key, payload, ttlDefault)
+	SetToCache(ctx, s.store, key, payload, ttlDefault)
 }
 
-func (s *cashierQueryCache) GetCachedCashier(id int) (*response.CashierResponse, bool) {
+func (s *cashierQueryCache) GetCachedCashier(ctx context.Context, id int) (*response.CashierResponse, bool) {
 	key := fmt.Sprintf(cashierByIdCacheKey, id)
-	result, found := GetFromCache[*response.CashierResponse](s.store, key)
+	result, found := GetFromCache[*response.CashierResponse](ctx, s.store, key)
 
 	if !found || result == nil {
 		return nil, false
@@ -158,12 +159,12 @@ func (s *cashierQueryCache) GetCachedCashier(id int) (*response.CashierResponse,
 	return *result, true
 }
 
-func (s *cashierQueryCache) SetCachedCashier(data *response.CashierResponse) {
+func (s *cashierQueryCache) SetCachedCashier(ctx context.Context, data *response.CashierResponse) {
 	if data == nil {
 		return
 	}
 
 	key := fmt.Sprintf(cashierByIdCacheKey, data.ID)
 
-	SetToCache(s.store, key, data, ttlDefault)
+	SetToCache(ctx, s.store, key, data, ttlDefault)
 }

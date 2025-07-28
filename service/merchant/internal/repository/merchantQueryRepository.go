@@ -12,19 +12,17 @@ import (
 
 type merchantQueryRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.MerchantRecordMapping
 }
 
-func NewMerchantQueryRepository(db *db.Queries, ctx context.Context, mapping recordmapper.MerchantRecordMapping) *merchantQueryRepository {
+func NewMerchantQueryRepository(db *db.Queries, mapping recordmapper.MerchantRecordMapping) *merchantQueryRepository {
 	return &merchantQueryRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r *merchantQueryRepository) FindAllMerchants(req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
+func (r *merchantQueryRepository) FindAllMerchants(ctx context.Context, req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetMerchantsParams{
@@ -33,7 +31,7 @@ func (r *merchantQueryRepository) FindAllMerchants(req *requests.FindAllMerchant
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetMerchants(r.ctx, reqDb)
+	res, err := r.db.GetMerchants(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, merchant_errors.ErrFindAllMerchants
@@ -50,7 +48,7 @@ func (r *merchantQueryRepository) FindAllMerchants(req *requests.FindAllMerchant
 	return r.mapping.ToMerchantsRecordPagination(res), &totalCount, nil
 }
 
-func (r *merchantQueryRepository) FindByActive(req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
+func (r *merchantQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetMerchantsActiveParams{
@@ -59,7 +57,7 @@ func (r *merchantQueryRepository) FindByActive(req *requests.FindAllMerchants) (
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetMerchantsActive(r.ctx, reqDb)
+	res, err := r.db.GetMerchantsActive(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, merchant_errors.ErrFindByActive
@@ -76,7 +74,7 @@ func (r *merchantQueryRepository) FindByActive(req *requests.FindAllMerchants) (
 	return r.mapping.ToMerchantsRecordActivePagination(res), &totalCount, nil
 }
 
-func (r *merchantQueryRepository) FindByTrashed(req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
+func (r *merchantQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetMerchantsTrashedParams{
@@ -85,7 +83,7 @@ func (r *merchantQueryRepository) FindByTrashed(req *requests.FindAllMerchants) 
 		Offset:  int32(offset),
 	}
 
-	res, err := r.db.GetMerchantsTrashed(r.ctx, reqDb)
+	res, err := r.db.GetMerchantsTrashed(ctx, reqDb)
 
 	if err != nil {
 		return nil, nil, merchant_errors.ErrFindByTrashed
@@ -102,8 +100,8 @@ func (r *merchantQueryRepository) FindByTrashed(req *requests.FindAllMerchants) 
 	return r.mapping.ToMerchantsRecordTrashedPagination(res), &totalCount, nil
 }
 
-func (r *merchantQueryRepository) FindById(user_id int) (*record.MerchantRecord, error) {
-	res, err := r.db.GetMerchantByID(r.ctx, int32(user_id))
+func (r *merchantQueryRepository) FindById(ctx context.Context, user_id int) (*record.MerchantRecord, error) {
+	res, err := r.db.GetMerchantByID(ctx, int32(user_id))
 
 	if err != nil {
 		return nil, merchant_errors.ErrFindById

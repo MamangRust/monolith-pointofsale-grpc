@@ -22,3 +22,7 @@
 {"level":"info","ts":"2025-06-24T00:36:41.247Z","caller":"apps/server.go:190","msg":"Server running on port 50051"}
 {"level":"debug","ts":"2025-06-24T00:36:41.247Z","caller":"apps/server.go:205","msg":"gRPC server listening on port 50051","port":50051}
 {"level":"info","ts":"2025-06-24T00:36:41.247Z","caller":"apps/server.go:197","msg":"Metrics server listening on :8081"}
+{"level":"debug","ts":"2025-07-28T10:39:09.210Z","caller":"database/database.go:71","msg":"Database connection established successfully with connection pool settings","DB_DRIVER":"postgres","MaxOpenConns":50,"MaxIdleConns":10,"ConnMaxLifetime":"30m0s"}
+{"level":"info","ts":"2025-07-28T10:39:09.226Z","caller":"apps/server.go:182","msg":"Server running on port 50051"}
+{"level":"debug","ts":"2025-07-28T10:39:09.226Z","caller":"apps/server.go:197","msg":"gRPC server listening on port 50051","port":50051}
+{"level":"info","ts":"2025-07-28T10:39:09.227Z","caller":"apps/server.go:189","msg":"Metrics server listening on :8081"}

@@ -11,20 +11,18 @@ import (
 
 type orderQueryRepository struct {
 	db      *db.Queries
-	ctx     context.Context
 	mapping recordmapper.OrderRecordMapping
 }
 
-func NewOrderQueryRepository(db *db.Queries, ctx context.Context, mapping recordmapper.OrderRecordMapping) *orderQueryRepository {
+func NewOrderQueryRepository(db *db.Queries, mapping recordmapper.OrderRecordMapping) *orderQueryRepository {
 	return &orderQueryRepository{
 		db:      db,
-		ctx:     ctx,
 		mapping: mapping,
 	}
 }
 
-func (r orderQueryRepository) FindById(order_id int) (*record.OrderRecord, error) {
-	res, err := r.db.GetOrderByID(r.ctx, int32(order_id))
+func (r orderQueryRepository) FindById(ctx context.Context, order_id int) (*record.OrderRecord, error) {
+	res, err := r.db.GetOrderByID(ctx, int32(order_id))
 
 	if err != nil {
 		return nil, order_errors.ErrFindById
