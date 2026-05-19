@@ -37,7 +37,7 @@ spec:
           args:
             - |
               echo "[INIT] Waiting for Kafka to be ready (TCP)..."
-              until nc -z pointofsale-service.svc.cluster.local 9092; do
+              until nc -z kafka.pointofsale.svc.cluster.local 9092; do
                 echo "Kafka is not ready yet. Retrying in 5 seconds..."
                 sleep 5
               done
@@ -52,7 +52,7 @@ spec:
             - secretRef:
                 name: app-secrets
           ports:
-            - containerPort: 8056
+            - containerPort: 8086
             - containerPort: 50056
           resources:
             requests:
@@ -64,7 +64,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /metrics
-              port: 8085
+              port: 8086
             initialDelaySeconds: 5
             periodSeconds: 10
             failureThreshold: 5

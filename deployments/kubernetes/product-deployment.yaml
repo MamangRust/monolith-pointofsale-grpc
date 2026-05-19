@@ -52,3 +52,10 @@ spec:
             periodSeconds: 10
             failureThreshold: 5
           imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: app-logs
+              mountPath: /var/log/app
+      volumes:
+        - name: app-logs
+          persistentVolumeClaim:
+            claimName: app-logs-pvc
