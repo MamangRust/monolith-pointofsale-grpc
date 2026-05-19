@@ -4,35 +4,31 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/role_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	sharedErrors "github.com/MamangRust/monolith-point-of-sale-shared/errors"
 )
 
 type roleRepository struct {
-	db      *db.Queries
-	mapping recordmapper.RoleRecordMapping
+	db *db.Queries
 }
 
-func NewRoleRepository(db *db.Queries, mapping recordmapper.RoleRecordMapping) *roleRepository {
+func NewRoleRepository(db *db.Queries) *roleRepository {
 	return &roleRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *roleRepository) FindById(ctx context.Context, id int) (*record.RoleRecord, error) {
+func (r *roleRepository) FindById(ctx context.Context, id int) (*db.Role, error) {
 	res, err := r.db.GetRole(ctx, int32(id))
 	if err != nil {
-		return nil, role_errors.ErrRoleNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-	return r.mapping.ToRoleRecord(res), nil
+	return res, nil
 }
 
-func (r *roleRepository) FindByName(ctx context.Context, name string) (*record.RoleRecord, error) {
+func (r *roleRepository) FindByName(ctx context.Context, name string) (*db.Role, error) {
 	res, err := r.db.GetRoleByName(ctx, name)
 	if err != nil {
-		return nil, role_errors.ErrRoleNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-	return r.mapping.ToRoleRecord(res), nil
+	return res, nil
 }

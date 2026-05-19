@@ -4,25 +4,21 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/order_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
 )
 
 type orderQueryRepository struct {
-	db      *db.Queries
-	mapping recordmapper.OrderRecordMapping
+	db *db.Queries
 }
 
-func NewOrderQueryRepository(db *db.Queries, mapping recordmapper.OrderRecordMapping) *orderQueryRepository {
+func NewOrderQueryRepository(db *db.Queries) OrderQueryRepository {
 	return &orderQueryRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *orderQueryRepository) FindAllOrders(ctx context.Context, req *requests.FindAllOrders) ([]*record.OrderRecord, *int, error) {
+func (r *orderQueryRepository) FindAllOrders(ctx context.Context, req *requests.FindAllOrders) ([]*db.GetOrdersRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetOrdersParams{
@@ -32,23 +28,19 @@ func (r *orderQueryRepository) FindAllOrders(ctx context.Context, req *requests.
 	}
 
 	res, err := r.db.GetOrders(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, order_errors.ErrFindAllOrders
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
-	} else {
-		totalCount = 0
 	}
 
-	return r.mapping.ToOrdersRecordPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *orderQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllOrders) ([]*record.OrderRecord, *int, error) {
+func (r *orderQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllOrders) ([]*db.GetOrdersActiveRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetOrdersActiveParams{
@@ -58,23 +50,19 @@ func (r *orderQueryRepository) FindByActive(ctx context.Context, req *requests.F
 	}
 
 	res, err := r.db.GetOrdersActive(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, order_errors.ErrFindByActive
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
-	} else {
-		totalCount = 0
 	}
 
-	return r.mapping.ToOrdersRecordActivePagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *orderQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllOrders) ([]*record.OrderRecord, *int, error) {
+func (r *orderQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllOrders) ([]*db.GetOrdersTrashedRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetOrdersTrashedParams{
@@ -84,23 +72,19 @@ func (r *orderQueryRepository) FindByTrashed(ctx context.Context, req *requests.
 	}
 
 	res, err := r.db.GetOrdersTrashed(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, order_errors.ErrFindByTrashed
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
-	} else {
-		totalCount = 0
 	}
 
-	return r.mapping.ToOrdersRecordTrashedPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *orderQueryRepository) FindByMerchant(ctx context.Context, req *requests.FindAllOrderMerchant) ([]*record.OrderRecord, *int, error) {
+func (r *orderQueryRepository) FindByMerchant(ctx context.Context, req *requests.FindAllOrderMerchant) ([]*db.GetOrdersByMerchantRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetOrdersByMerchantParams{
@@ -111,28 +95,23 @@ func (r *orderQueryRepository) FindByMerchant(ctx context.Context, req *requests
 	}
 
 	res, err := r.db.GetOrdersByMerchant(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, order_errors.ErrFindByMerchant
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
-	} else {
-		totalCount = 0
 	}
 
-	return r.mapping.ToOrdersRecordByMerchantPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *orderQueryRepository) FindById(ctx context.Context, user_id int) (*record.OrderRecord, error) {
-	res, err := r.db.GetOrderByID(ctx, int32(user_id))
-
+func (r *orderQueryRepository) FindById(ctx context.Context, orderID int) (*db.Order, error) {
+	res, err := r.db.GetOrderByID(ctx, int32(orderID))
 	if err != nil {
 		return nil, order_errors.ErrFindById
 	}
 
-	return r.mapping.ToOrderRecord(res), nil
+	return res, nil
 }

@@ -4,25 +4,21 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/merchant_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	sharedErrors "github.com/MamangRust/monolith-point-of-sale-shared/errors"
 )
 
 type merchantQueryRepository struct {
-	db      *db.Queries
-	mapping recordmapper.MerchantRecordMapping
+	db *db.Queries
 }
 
-func NewMerchantQueryRepository(db *db.Queries, mapping recordmapper.MerchantRecordMapping) *merchantQueryRepository {
+func NewMerchantQueryRepository(db *db.Queries) MerchantQueryRepository {
 	return &merchantQueryRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *merchantQueryRepository) FindAllMerchants(ctx context.Context, req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
+func (r *merchantQueryRepository) FindAllMerchants(ctx context.Context, req *requests.FindAllMerchants) ([]*db.GetMerchantsRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetMerchantsParams{
@@ -32,23 +28,21 @@ func (r *merchantQueryRepository) FindAllMerchants(ctx context.Context, req *req
 	}
 
 	res, err := r.db.GetMerchants(ctx, reqDb)
-
 	if err != nil {
-		return nil, nil, merchant_errors.ErrFindAllMerchants
+		return nil, nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToMerchantsRecordPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *merchantQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
+func (r *merchantQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllMerchants) ([]*db.GetMerchantsActiveRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetMerchantsActiveParams{
@@ -58,23 +52,21 @@ func (r *merchantQueryRepository) FindByActive(ctx context.Context, req *request
 	}
 
 	res, err := r.db.GetMerchantsActive(ctx, reqDb)
-
 	if err != nil {
-		return nil, nil, merchant_errors.ErrFindByActive
+		return nil, nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToMerchantsRecordActivePagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *merchantQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllMerchants) ([]*record.MerchantRecord, *int, error) {
+func (r *merchantQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllMerchants) ([]*db.GetMerchantsTrashedRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetMerchantsTrashedParams{
@@ -84,28 +76,25 @@ func (r *merchantQueryRepository) FindByTrashed(ctx context.Context, req *reques
 	}
 
 	res, err := r.db.GetMerchantsTrashed(ctx, reqDb)
-
 	if err != nil {
-		return nil, nil, merchant_errors.ErrFindByTrashed
+		return nil, nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToMerchantsRecordTrashedPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *merchantQueryRepository) FindById(ctx context.Context, user_id int) (*record.MerchantRecord, error) {
-	res, err := r.db.GetMerchantByID(ctx, int32(user_id))
-
+func (r *merchantQueryRepository) FindById(ctx context.Context, userID int) (*db.Merchant, error) {
+	res, err := r.db.GetMerchantByID(ctx, int32(userID))
 	if err != nil {
-		return nil, merchant_errors.ErrFindById
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
-	return r.mapping.ToMerchantRecord(res), nil
+	return res, nil
 }

@@ -4,29 +4,43 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/order_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type orderQueryRepository struct {
-	db      *db.Queries
-	mapping recordmapper.OrderRecordMapping
+	client pb.OrderServiceClient
 }
 
-func NewOrderQueryRepository(db *db.Queries, mapping recordmapper.OrderRecordMapping) *orderQueryRepository {
+func NewOrderQueryRepository(client pb.OrderServiceClient) OrderQueryRepository {
 	return &orderQueryRepository{
-		db:      db,
-		mapping: mapping,
+		client: client,
 	}
 }
 
-func (r orderQueryRepository) FindById(ctx context.Context, order_id int) (*record.OrderRecord, error) {
-	res, err := r.db.GetOrderByID(ctx, int32(order_id))
-
+func (r *orderQueryRepository) FindById(ctx context.Context, order_id int) (*db.Order, error) {
+	resp, err := r.client.FindById(ctx, &pb.FindByIdOrderRequest{
+		Id: int32(order_id),
+	})
 	if err != nil {
 		return nil, order_errors.ErrFindById
 	}
 
-	return r.mapping.ToOrderRecord(res), nil
+	if resp == nil || resp.Data == nil {
+		return nil, order_errors.ErrFindById
+	}
+
+	o := resp.Data
+	res := &db.Order{
+		OrderID:    o.Id,
+		MerchantID: o.MerchantId,
+		CashierID:  o.CashierId,
+		TotalPrice: int64(o.TotalPrice),
+		CreatedAt:  parsePgTimestamp(o.CreatedAt),
+		UpdatedAt:  parsePgTimestamp(o.UpdatedAt),
+		DeletedAt:  pgtype.Timestamp{},
+	}
+
+	return res, nil
 }

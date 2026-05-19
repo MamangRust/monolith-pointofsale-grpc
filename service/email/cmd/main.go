@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	logger, err := logger.NewLogger()
+	logger, err := logger.NewLogger("email-service")
 	if err != nil {
 		log.Fatalf("Error creating logger: %v", err)
 	}

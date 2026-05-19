@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"github.com/MamangRust/monolith-point-of-sale-auth/internal/service"
+	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
-	protomapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/proto"
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
+	"go.uber.org/zap"
 )
 
 type authHandleGrpc struct {
@@ -16,55 +17,77 @@ type authHandleGrpc struct {
 	loginService         service.LoginService
 	passwordResetService service.PasswordResetService
 	identifyService      service.IdentifyService
-	mapping              protomapper.AuthProtoMapper
+	logger               logger.LoggerInterface
 }
 
-func NewAuthHandleGrpc(authService *service.Service) pb.AuthServiceServer {
+func NewAuthHandleGrpc(authService *service.Service, logger logger.LoggerInterface) pb.AuthServiceServer {
 	return &authHandleGrpc{
 		registerService:      authService.Register,
 		loginService:         authService.Login,
 		passwordResetService: authService.PasswordReset,
 		identifyService:      authService.Identify,
-		mapping:              protomapper.NewAuthProtoMapper(),
+		logger:               logger,
 	}
 }
 
 func (s *authHandleGrpc) VerifyCode(ctx context.Context, req *pb.VerifyCodeRequest) (*pb.ApiResponseVerifyCode, error) {
-	_, err := s.passwordResetService.VerifyCode(ctx, req.Code)
+	s.logger.Info("VerifyCode called", zap.String("code", req.Code))
 
+	_, err := s.passwordResetService.VerifyCode(ctx, req.Code)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("VerifyCode failed", zap.Any("error", err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseVerifyCode("success", "Verify code successful"), nil
+	s.logger.Info("VerifyCode success", zap.String("code", req.Code))
 
+	return &pb.ApiResponseVerifyCode{
+		Status:  "success",
+		Message: "Verification successfully",
+	}, nil
 }
 
 func (s *authHandleGrpc) ForgotPassword(ctx context.Context, req *pb.ForgotPasswordRequest) (*pb.ApiResponseForgotPassword, error) {
-	_, err := s.passwordResetService.ForgotPassword(ctx, req.Email)
+	s.logger.Info("ForgotPassword called", zap.String("email", req.Email))
 
+	_, err := s.passwordResetService.ForgotPassword(ctx, req.Email)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("ForgotPassword failed", zap.Any("error", err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseForgotPassword("success", "Forgot password successful"), nil
+	s.logger.Info("ForgotPassword successful", zap.Bool("success", true))
+
+	return &pb.ApiResponseForgotPassword{
+		Status:  "success",
+		Message: "ForgotPassword successful",
+	}, nil
 }
 
 func (s *authHandleGrpc) ResetPassword(ctx context.Context, req *pb.ResetPasswordRequest) (*pb.ApiResponseResetPassword, error) {
+	s.logger.Info("ResetPassword called", zap.String("reset_token", req.ResetToken))
+
 	_, err := s.passwordResetService.ResetPassword(ctx, &requests.CreateResetPasswordRequest{
 		ResetToken:      req.ResetToken,
 		Password:        req.Password,
 		ConfirmPassword: req.ConfirmPassword,
 	})
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("ResetPassword failed", zap.Any("error", err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseResetPassword("success", "Reset password successful"), nil
+	s.logger.Info("ResetPassword successful", zap.Bool("success", true))
+
+	return &pb.ApiResponseResetPassword{
+		Status:  "success",
+		Message: "Reset password successful",
+	}, nil
 }
 
 func (s *authHandleGrpc) LoginUser(ctx context.Context, req *pb.LoginRequest) (*pb.ApiResponseLogin, error) {
+	s.logger.Info("LoginUser called", zap.String("email", req.Email))
+
 	request := &requests.AuthRequest{
 		Email:    req.Email,
 		Password: req.Password,
@@ -72,33 +95,79 @@ func (s *authHandleGrpc) LoginUser(ctx context.Context, req *pb.LoginRequest) (*
 
 	res, err := s.loginService.Login(ctx, request)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("LoginUser failed", zap.Any("error", err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseLogin("success", "Login successful", res), nil
+	s.logger.Info("LoginUser successful", zap.Bool("success", true))
+
+	return &pb.ApiResponseLogin{
+		Status:  "success",
+		Message: "LoginUser successfull",
+		Data: &pb.TokenResponse{
+			AccessToken:  res.AccessToken,
+			RefreshToken: res.RefreshToken,
+		},
+	}, nil
 }
 
 func (s *authHandleGrpc) RefreshToken(ctx context.Context, req *pb.RefreshTokenRequest) (*pb.ApiResponseRefreshToken, error) {
-	res, err := s.identifyService.RefreshToken(ctx, req.RefreshToken)
+	s.logger.Info("RefreshToken called")
 
+	res, err := s.identifyService.RefreshToken(ctx, req.RefreshToken)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("RefreshToken failed", zap.Any("error", err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseRefreshToken("success", "Refresh token successful", res), nil
+	s.logger.Info("RefreshToken successful", zap.Bool("success", true))
+
+	return &pb.ApiResponseRefreshToken{
+		Status:  "success",
+		Message: "Refresh token successful",
+		Data: &pb.TokenResponse{
+			AccessToken:  res.AccessToken,
+			RefreshToken: req.RefreshToken,
+		},
+	}, nil
 }
 
 func (s *authHandleGrpc) GetMe(ctx context.Context, req *pb.GetMeRequest) (*pb.ApiResponseGetMe, error) {
-	res, err := s.identifyService.GetMe(ctx, req.AccessToken)
+	s.logger.Info("GetMe called")
 
+	res, err := s.identifyService.GetMe(ctx, req.AccessToken)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("GetMe failed", zap.Any("error", err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseGetMe("success", "Refresh token successful", res), nil
+	s.logger.Info("GetMe successful", zap.Bool("success", true))
+
+	var createdAtStr, updatedAtStr string
+	if res.CreatedAt.Valid {
+		createdAtStr = res.CreatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if res.UpdatedAt.Valid {
+		updatedAtStr = res.UpdatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+
+	return &pb.ApiResponseGetMe{
+		Status:  "success",
+		Message: "Get me successfully",
+		Data: &pb.UserResponse{
+			Id:        res.UserID,
+			Firstname: res.Firstname,
+			Lastname:  res.Lastname,
+			Email:     res.Email,
+			CreatedAt: createdAtStr,
+			UpdatedAt: updatedAtStr,
+		},
+	}, nil
 }
 
 func (s *authHandleGrpc) RegisterUser(ctx context.Context, req *pb.RegisterRequest) (*pb.ApiResponseRegister, error) {
+	s.logger.Info("RegisterUser called", zap.String("email", req.Email))
+
 	request := &requests.RegisterRequest{
 		FirstName:       req.Firstname,
 		LastName:        req.Lastname,
@@ -109,8 +178,30 @@ func (s *authHandleGrpc) RegisterUser(ctx context.Context, req *pb.RegisterReque
 
 	res, err := s.registerService.Register(ctx, request)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("RegisterUser failed", zap.Any("error", err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	return s.mapping.ToProtoResponseRegister("success", "Registration successful", res), nil
+	s.logger.Info("RegisterUser successful", zap.Bool("success", true))
+
+	var createdAtStr, updatedAtStr string
+	if res.CreatedAt.Valid {
+		createdAtStr = res.CreatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if res.UpdatedAt.Valid {
+		updatedAtStr = res.UpdatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+
+	return &pb.ApiResponseRegister{
+		Status:  "success",
+		Message: "RegisterUser successful",
+		Data: &pb.UserResponse{
+			Id:        res.UserID,
+			Firstname: res.Firstname,
+			Lastname:  res.Lastname,
+			Email:     res.Email,
+			CreatedAt: createdAtStr,
+			UpdatedAt: updatedAtStr,
+		},
+	}, nil
 }

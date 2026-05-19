@@ -2,129 +2,93 @@ package repository
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/user_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	sharedErrors "github.com/MamangRust/monolith-point-of-sale-shared/errors"
+	"github.com/jackc/pgx/v5"
 )
 
 type userRepository struct {
-	db      *db.Queries
-	mapping recordmapper.UserRecordMapping
+	db *db.Queries
 }
 
-func NewUserRepository(db *db.Queries, mapping recordmapper.UserRecordMapping) *userRepository {
+func NewUserRepository(db *db.Queries) *userRepository {
 	return &userRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *userRepository) FindById(ctx context.Context, user_id int) (*record.UserRecord, error) {
+func (r *userRepository) FindById(ctx context.Context, user_id int) (*db.User, error) {
 	res, err := r.db.GetUserByID(ctx, int32(user_id))
-
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
-		}
-
-		return nil, user_errors.ErrUserNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }
 
-func (r *userRepository) FindByEmail(ctx context.Context, email string) (*record.UserRecord, error) {
+func (r *userRepository) FindByEmail(ctx context.Context, email string) (*db.User, error) {
 	res, err := r.db.GetUserByEmail(ctx, email)
-
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if err == pgx.ErrNoRows {
 			return nil, nil
 		}
-
-		return nil, user_errors.ErrUserNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }
 
-func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string) (*record.UserRecord, error) {
+func (r *userRepository) FindByEmailAndVerify(ctx context.Context, email string) (*db.User, error) {
 	res, err := r.db.GetUserByEmailAndVerified(ctx, email)
-
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
-		}
-
-		return nil, user_errors.ErrUserNotFound
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }
 
-func (r *userRepository) FindByVerificationCode(ctx context.Context, verification_code string) (*record.UserRecord, error) {
+func (r *userRepository) FindByVerificationCode(ctx context.Context, verification_code string) (*db.User, error) {
 	res, err := r.db.GetUserByVerificationCode(ctx, verification_code)
-
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
-		}
-
-		return nil, user_errors.ErrUserNotFound
-
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }
 
-func (r *userRepository) CreateUser(ctx context.Context, request *requests.RegisterRequest) (*record.UserRecord, error) {
+func (r *userRepository) CreateUser(ctx context.Context, request *requests.RegisterRequest) (*db.User, error) {
 	req := db.CreateUserParams{
 		Firstname:        request.FirstName,
 		Lastname:         request.LastName,
 		Email:            request.Email,
 		Password:         request.Password,
 		VerificationCode: request.VerifiedCode,
-		IsVerified:       sql.NullBool{Bool: request.IsVerified, Valid: true},
+		IsVerified:       &request.IsVerified,
 	}
 
 	user, err := r.db.CreateUser(ctx, req)
-
 	if err != nil {
-		return nil, user_errors.ErrCreateUser
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-
-	return r.mapping.ToUserRecord(user), nil
+	return user, nil
 }
 
-func (r *userRepository) UpdateUserIsVerified(ctx context.Context, user_id int, is_verified bool) (*record.UserRecord, error) {
+func (r *userRepository) UpdateUserIsVerified(ctx context.Context, user_id int, is_verified bool) (*db.User, error) {
 	res, err := r.db.UpdateUserIsVerified(ctx, db.UpdateUserIsVerifiedParams{
-		UserID: int32(user_id),
-		IsVerified: sql.NullBool{
-			Bool:  is_verified,
-			Valid: true,
-		},
+		UserID:     int32(user_id),
+		IsVerified: &is_verified,
 	})
-
 	if err != nil {
-		return nil, user_errors.ErrUpdateUserVerificationCode
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }
 
-func (r *userRepository) UpdateUserPassword(ctx context.Context, user_id int, password string) (*record.UserRecord, error) {
+func (r *userRepository) UpdateUserPassword(ctx context.Context, user_id int, password string) (*db.User, error) {
 	res, err := r.db.UpdateUserPassword(ctx, db.UpdateUserPasswordParams{
 		UserID:   int32(user_id),
 		Password: password,
 	})
-
 	if err != nil {
-		return nil, user_errors.ErrUpdateUserPassword
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }

@@ -4,31 +4,39 @@ import (
 	"context"
 	"math"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/user_errors"
-	protomapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/proto"
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 	"github.com/MamangRust/monolith-point-of-sale-user/internal/service"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type userHandleGrpc struct {
 	pb.UnimplementedUserServiceServer
 	userQueryService   service.UserQueryService
 	userCommandService service.UserCommandService
-	mapping            protomapper.UserProtoMapper
+	logger             logger.LoggerInterface
 }
 
-func NewUserHandleGrpc(user *service.Service) *userHandleGrpc {
+func NewUserHandleGrpc(
+	user *service.Service,
+	logger logger.LoggerInterface,
+) pb.UserServiceServer {
 	return &userHandleGrpc{
 		userQueryService:   user.UserQuery,
 		userCommandService: user.UserCommand,
-		mapping:            protomapper.NewUserProtoMapper(),
+		logger:             logger,
 	}
 }
 
 func (s *userHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllUserRequest) (*pb.ApiResponsePaginationUser, error) {
+	s.logger.Info("FindAll users called", zap.Int32("page", request.GetPage()))
+
 	page := int(request.GetPage())
 	pageSize := int(request.GetPageSize())
 	search := request.GetSearch()
@@ -47,44 +55,60 @@ func (s *userHandleGrpc) FindAll(ctx context.Context, request *pb.FindAllUserReq
 	}
 
 	users, totalRecords, err := s.userQueryService.FindAll(ctx, &reqService)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("FindAll users failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
+	var totalRecordsVal int
+	if totalRecords != nil {
+		totalRecordsVal = *totalRecords
+	}
+	totalPages := int(math.Ceil(float64(totalRecordsVal) / float64(pageSize)))
 
 	paginationMeta := &pb.PaginationMeta{
 		CurrentPage:  int32(page),
 		PageSize:     int32(pageSize),
 		TotalPages:   int32(totalPages),
-		TotalRecords: int32(*totalRecords),
+		TotalRecords: int32(totalRecordsVal),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationUser(paginationMeta, "success", "Successfully fetched users", users)
-	return so, nil
+	s.logger.Info("FindAll users success")
+
+	return &pb.ApiResponsePaginationUser{
+		Status:     "success",
+		Message:    "Successfully fetched users",
+		Data:       mapGetUsersRowsToProto(users),
+		Pagination: mapPaginationMeta(paginationMeta),
+	}, nil
 }
 
 func (s *userHandleGrpc) FindById(ctx context.Context, request *pb.FindByIdUserRequest) (*pb.ApiResponseUser, error) {
-	id := int(request.GetId())
+	s.logger.Info("FindById user called", zap.Int32("id", request.GetId()))
 
+	id := int(request.GetId())
 	if id == 0 {
 		return nil, user_errors.ErrGrpcUserNotFound
 	}
 
 	user, err := s.userQueryService.FindByID(ctx, id)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("FindById user failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUser("success", "Successfully fetched user", user)
+	s.logger.Info("FindById user success")
 
-	return so, nil
-
+	return &pb.ApiResponseUser{
+		Status:  "success",
+		Message: "Successfully fetched user",
+		Data:    mapUserToProto(user),
+	}, nil
 }
 
 func (s *userHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAllUserRequest) (*pb.ApiResponsePaginationUserDeleteAt, error) {
+	s.logger.Info("FindByActive users called", zap.Int32("page", request.GetPage()))
+
 	page := int(request.GetPage())
 	pageSize := int(request.GetPageSize())
 	search := request.GetSearch()
@@ -103,25 +127,37 @@ func (s *userHandleGrpc) FindByActive(ctx context.Context, request *pb.FindAllUs
 	}
 
 	users, totalRecords, err := s.userQueryService.FindByActive(ctx, &reqService)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("FindByActive users failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
+	var totalRecordsVal int
+	if totalRecords != nil {
+		totalRecordsVal = *totalRecords
+	}
+	totalPages := int(math.Ceil(float64(totalRecordsVal) / float64(pageSize)))
 
 	paginationMeta := &pb.PaginationMeta{
 		CurrentPage:  int32(page),
 		PageSize:     int32(pageSize),
 		TotalPages:   int32(totalPages),
-		TotalRecords: int32(*totalRecords),
+		TotalRecords: int32(totalRecordsVal),
 	}
-	so := s.mapping.ToProtoResponsePaginationUserDeleteAt(paginationMeta, "success", "Successfully fetched active users", users)
 
-	return so, nil
+	s.logger.Info("FindByActive users success")
+
+	return &pb.ApiResponsePaginationUserDeleteAt{
+		Status:     "success",
+		Message:    "Successfully fetched active users",
+		Data:       mapActiveUsersToProto(users),
+		Pagination: mapPaginationMeta(paginationMeta),
+	}, nil
 }
 
 func (s *userHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindAllUserRequest) (*pb.ApiResponsePaginationUserDeleteAt, error) {
+	s.logger.Info("FindByTrashed users called")
+
 	page := int(request.GetPage())
 	pageSize := int(request.GetPageSize())
 	search := request.GetSearch()
@@ -140,26 +176,37 @@ func (s *userHandleGrpc) FindByTrashed(ctx context.Context, request *pb.FindAllU
 	}
 
 	users, totalRecords, err := s.userQueryService.FindByTrashed(ctx, &reqService)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("FindByTrashed users failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	totalPages := int(math.Ceil(float64(*totalRecords) / float64(pageSize)))
+	var totalRecordsVal int
+	if totalRecords != nil {
+		totalRecordsVal = *totalRecords
+	}
+	totalPages := int(math.Ceil(float64(totalRecordsVal) / float64(pageSize)))
 
 	paginationMeta := &pb.PaginationMeta{
 		CurrentPage:  int32(page),
 		PageSize:     int32(pageSize),
 		TotalPages:   int32(totalPages),
-		TotalRecords: int32(*totalRecords),
+		TotalRecords: int32(totalRecordsVal),
 	}
 
-	so := s.mapping.ToProtoResponsePaginationUserDeleteAt(paginationMeta, "success", "Successfully fetched trashed users", users)
+	s.logger.Info("FindByTrashed users success")
 
-	return so, nil
+	return &pb.ApiResponsePaginationUserDeleteAt{
+		Status:     "success",
+		Message:    "Successfully fetched trashed users",
+		Data:       mapTrashedUsersToProto(users),
+		Pagination: mapPaginationMeta(paginationMeta),
+	}, nil
 }
 
 func (s *userHandleGrpc) Create(ctx context.Context, request *pb.CreateUserRequest) (*pb.ApiResponseUser, error) {
+	s.logger.Info("Create user called", zap.String("email", request.GetEmail()))
+
 	req := &requests.CreateUserRequest{
 		FirstName:       request.GetFirstname(),
 		LastName:        request.GetLastname(),
@@ -173,19 +220,24 @@ func (s *userHandleGrpc) Create(ctx context.Context, request *pb.CreateUserReque
 	}
 
 	user, err := s.userCommandService.CreateUser(ctx, req)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("Create user failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUser("success", "Successfully created user", user)
+	s.logger.Info("Create user success")
 
-	return so, nil
+	return &pb.ApiResponseUser{
+		Status:  "success",
+		Message: "Successfully created user",
+		Data:    mapUserToProto(user),
+	}, nil
 }
 
 func (s *userHandleGrpc) Update(ctx context.Context, request *pb.UpdateUserRequest) (*pb.ApiResponseUser, error) {
-	id := int(request.GetId())
+	s.logger.Info("Update user called", zap.Int32("id", request.GetId()))
 
+	id := int(request.GetId())
 	if id == 0 {
 		return nil, user_errors.ErrGrpcUserInvalidId
 	}
@@ -204,90 +256,275 @@ func (s *userHandleGrpc) Update(ctx context.Context, request *pb.UpdateUserReque
 	}
 
 	user, err := s.userCommandService.UpdateUser(ctx, req)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("Update user failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUser("success", "Successfully updated user", user)
+	s.logger.Info("Update user success")
 
-	return so, nil
+	return &pb.ApiResponseUser{
+		Status:  "success",
+		Message: "Successfully updated user",
+		Data:    mapUserToProto(user),
+	}, nil
 }
 
 func (s *userHandleGrpc) TrashedUser(ctx context.Context, request *pb.FindByIdUserRequest) (*pb.ApiResponseUserDeleteAt, error) {
-	id := int(request.GetId())
+	s.logger.Info("TrashedUser called", zap.Int32("id", request.GetId()))
 
+	id := int(request.GetId())
 	if id == 0 {
 		return nil, user_errors.ErrGrpcUserInvalidId
 	}
 
 	user, err := s.userCommandService.TrashedUser(ctx, id)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("TrashedUser failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUserDeleteAt("success", "Successfully trashed user", user)
+	s.logger.Info("TrashedUser success")
 
-	return so, nil
+	return &pb.ApiResponseUserDeleteAt{
+		Status:  "success",
+		Message: "Successfully trashed user",
+		Data:    mapUserDeleteAtToProto(user),
+	}, nil
 }
 
 func (s *userHandleGrpc) RestoreUser(ctx context.Context, request *pb.FindByIdUserRequest) (*pb.ApiResponseUserDeleteAt, error) {
-	id := int(request.GetId())
+	s.logger.Info("RestoreUser called", zap.Int32("id", request.GetId()))
 
+	id := int(request.GetId())
 	if id == 0 {
 		return nil, user_errors.ErrGrpcUserInvalidId
 	}
 
 	user, err := s.userCommandService.RestoreUser(ctx, id)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("RestoreUser failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUserDeleteAt("success", "Successfully restored user", user)
+	s.logger.Info("RestoreUser success")
 
-	return so, nil
+	return &pb.ApiResponseUserDeleteAt{
+		Status:  "success",
+		Message: "Successfully restored user",
+		Data:    mapUserDeleteAtToProto(user),
+	}, nil
 }
 
 func (s *userHandleGrpc) DeleteUserPermanent(ctx context.Context, request *pb.FindByIdUserRequest) (*pb.ApiResponseUserDelete, error) {
-	id := int(request.GetId())
+	s.logger.Info("DeleteUserPermanent called", zap.Int32("id", request.GetId()))
 
+	id := int(request.GetId())
 	if id == 0 {
 		return nil, user_errors.ErrGrpcUserInvalidId
 	}
 
 	_, err := s.userCommandService.DeleteUserPermanent(ctx, id)
-
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("DeleteUserPermanent failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUserDelete("success", "Successfully deleted user permanently")
+	s.logger.Info("DeleteUserPermanent success")
 
-	return so, nil
+	return &pb.ApiResponseUserDelete{
+		Status:  "success",
+		Message: "Successfully deleted user permanently",
+	}, nil
 }
 
 func (s *userHandleGrpc) RestoreAllUser(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseUserAll, error) {
-	_, err := s.userCommandService.RestoreAllUser(ctx)
+	s.logger.Info("RestoreAllUser called")
 
+	_, err := s.userCommandService.RestoreAllUser(ctx)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("RestoreAllUser failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUserAll("success", "Successfully restore all user")
+	s.logger.Info("RestoreAllUser success")
 
-	return so, nil
+	return &pb.ApiResponseUserAll{
+		Status:  "success",
+		Message: "Successfully restore all user",
+	}, nil
 }
 
 func (s *userHandleGrpc) DeleteAllUserPermanent(ctx context.Context, _ *emptypb.Empty) (*pb.ApiResponseUserAll, error) {
-	_, err := s.userCommandService.DeleteAllUserPermanent(ctx)
+	s.logger.Info("DeleteAllUserPermanent called")
 
+	_, err := s.userCommandService.DeleteAllUserPermanent(ctx)
 	if err != nil {
-		return nil, response.ToGrpcErrorFromErrorResponse(err)
+		s.logger.Error("DeleteAllUserPermanent failed", zap.Error(err))
+		return nil, errors.ToGrpcError(err)
 	}
 
-	so := s.mapping.ToProtoResponseUserAll("success", "Successfully delete user permanen")
+	s.logger.Info("DeleteAllUserPermanent success")
 
-	return so, nil
+	return &pb.ApiResponseUserAll{
+		Status:  "success",
+		Message: "Successfully delete user permanen",
+	}, nil
+}
+
+// Map helpers
+func mapPaginationMeta(meta *pb.PaginationMeta) *pb.PaginationMeta {
+	if meta == nil {
+		return nil
+	}
+	return &pb.PaginationMeta{
+		CurrentPage:  meta.CurrentPage,
+		PageSize:     meta.PageSize,
+		TotalPages:   meta.TotalPages,
+		TotalRecords: meta.TotalRecords,
+	}
+}
+
+func mapUserToProto(user *db.User) *pb.UserResponse {
+	if user == nil {
+		return nil
+	}
+	var createdAtStr, updatedAtStr string
+	if user.CreatedAt.Valid {
+		createdAtStr = user.CreatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.UpdatedAt.Valid {
+		updatedAtStr = user.UpdatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	return &pb.UserResponse{
+		Id:        int32(user.UserID),
+		Firstname: user.Firstname,
+		Lastname:  user.Lastname,
+		Email:     user.Email,
+		CreatedAt: createdAtStr,
+		UpdatedAt: updatedAtStr,
+	}
+}
+
+func mapGetUsersRowToProto(user *db.GetUsersRow) *pb.UserResponse {
+	if user == nil {
+		return nil
+	}
+	var createdAtStr, updatedAtStr string
+	if user.CreatedAt.Valid {
+		createdAtStr = user.CreatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.UpdatedAt.Valid {
+		updatedAtStr = user.UpdatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	return &pb.UserResponse{
+		Id:        int32(user.UserID),
+		Firstname: user.Firstname,
+		Lastname:  user.Lastname,
+		Email:     user.Email,
+		CreatedAt: createdAtStr,
+		UpdatedAt: updatedAtStr,
+	}
+}
+
+func mapGetUsersRowsToProto(users []*db.GetUsersRow) []*pb.UserResponse {
+	var responseUsers []*pb.UserResponse
+	for _, u := range users {
+		responseUsers = append(responseUsers, mapGetUsersRowToProto(u))
+	}
+	return responseUsers
+}
+
+func mapUserDeleteAtToProto(user *db.User) *pb.UserResponseDeleteAt {
+	if user == nil {
+		return nil
+	}
+	var createdAtStr, updatedAtStr string
+	var deletedAt *wrapperspb.StringValue
+	if user.CreatedAt.Valid {
+		createdAtStr = user.CreatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.UpdatedAt.Valid {
+		updatedAtStr = user.UpdatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.DeletedAt.Valid {
+		deletedAt = wrapperspb.String(user.DeletedAt.Time.Format("2006-01-02 15:04:05"))
+	}
+	return &pb.UserResponseDeleteAt{
+		Id:        int32(user.UserID),
+		Firstname: user.Firstname,
+		Lastname:  user.Lastname,
+		Email:     user.Email,
+		CreatedAt: createdAtStr,
+		UpdatedAt: updatedAtStr,
+		DeletedAt: deletedAt,
+	}
+}
+
+func mapActiveUserToProto(user *db.GetUsersActiveRow) *pb.UserResponseDeleteAt {
+	if user == nil {
+		return nil
+	}
+	var createdAtStr, updatedAtStr string
+	var deletedAt *wrapperspb.StringValue
+	if user.CreatedAt.Valid {
+		createdAtStr = user.CreatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.UpdatedAt.Valid {
+		updatedAtStr = user.UpdatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.DeletedAt.Valid {
+		deletedAt = wrapperspb.String(user.DeletedAt.Time.Format("2006-01-02 15:04:05"))
+	}
+	return &pb.UserResponseDeleteAt{
+		Id:        int32(user.UserID),
+		Firstname: user.Firstname,
+		Lastname:  user.Lastname,
+		Email:     user.Email,
+		CreatedAt: createdAtStr,
+		UpdatedAt: updatedAtStr,
+		DeletedAt: deletedAt,
+	}
+}
+
+func mapActiveUsersToProto(users []*db.GetUsersActiveRow) []*pb.UserResponseDeleteAt {
+	var responseUsers []*pb.UserResponseDeleteAt
+	for _, u := range users {
+		responseUsers = append(responseUsers, mapActiveUserToProto(u))
+	}
+	return responseUsers
+}
+
+func mapTrashedUserToProto(user *db.GetUserTrashedRow) *pb.UserResponseDeleteAt {
+	if user == nil {
+		return nil
+	}
+	var createdAtStr, updatedAtStr string
+	var deletedAt *wrapperspb.StringValue
+	if user.CreatedAt.Valid {
+		createdAtStr = user.CreatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.UpdatedAt.Valid {
+		updatedAtStr = user.UpdatedAt.Time.Format("2006-01-02 15:04:05")
+	}
+	if user.DeletedAt.Valid {
+		deletedAt = wrapperspb.String(user.DeletedAt.Time.Format("2006-01-02 15:04:05"))
+	}
+	return &pb.UserResponseDeleteAt{
+		Id:        int32(user.UserID),
+		Firstname: user.Firstname,
+		Lastname:  user.Lastname,
+		Email:     user.Email,
+		CreatedAt: createdAtStr,
+		UpdatedAt: updatedAtStr,
+		DeletedAt: deletedAt,
+	}
+}
+
+func mapTrashedUsersToProto(users []*db.GetUserTrashedRow) []*pb.UserResponseDeleteAt {
+	var responseUsers []*pb.UserResponseDeleteAt
+	for _, u := range users {
+		responseUsers = append(responseUsers, mapTrashedUserToProto(u))
+	}
+	return responseUsers
 }

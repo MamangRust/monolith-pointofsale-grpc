@@ -2,28 +2,23 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/product_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
 )
 
 type productQueryRepository struct {
-	db      *db.Queries
-	mapping recordmapper.ProductRecordMapping
+	db *db.Queries
 }
 
-func NewProductQueryRepository(db *db.Queries, mapping recordmapper.ProductRecordMapping) *productQueryRepository {
+func NewProductQueryRepository(db *db.Queries) *productQueryRepository {
 	return &productQueryRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *productQueryRepository) FindAllProducts(ctx context.Context, req *requests.FindAllProducts) ([]*record.ProductRecord, *int, error) {
+func (r *productQueryRepository) FindAllProducts(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetProductsParams{
@@ -33,23 +28,21 @@ func (r *productQueryRepository) FindAllProducts(ctx context.Context, req *reque
 	}
 
 	res, err := r.db.GetProducts(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, product_errors.ErrFindAllProducts
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToProductsRecordPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *productQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllProducts) ([]*record.ProductRecord, *int, error) {
+func (r *productQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsActiveRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetProductsActiveParams{
@@ -59,23 +52,21 @@ func (r *productQueryRepository) FindByActive(ctx context.Context, req *requests
 	}
 
 	res, err := r.db.GetProductsActive(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, product_errors.ErrFindByActive
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToProductsRecordActivePagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *productQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllProducts) ([]*record.ProductRecord, *int, error) {
+func (r *productQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsTrashedRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetProductsTrashedParams{
@@ -85,28 +76,26 @@ func (r *productQueryRepository) FindByTrashed(ctx context.Context, req *request
 	}
 
 	res, err := r.db.GetProductsTrashed(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, product_errors.ErrFindByTrashed
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToProductsRecordTrashedPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *productQueryRepository) FindByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest) ([]*record.ProductRecord, *int, error) {
+func (r *productQueryRepository) FindByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest) ([]*db.GetProductsByMerchantRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetProductsByMerchantParams{
 		MerchantID: int32(req.MerchantID),
-		Column2:    sql.NullString{String: req.Search, Valid: true},
+		Column2:    &req.Search,
 		Column3:    req.CategoryID,
 		Column4:    req.MinPrice,
 		Column5:    req.MaxPrice,
@@ -115,23 +104,21 @@ func (r *productQueryRepository) FindByMerchant(ctx context.Context, req *reques
 	}
 
 	res, err := r.db.GetProductsByMerchant(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, product_errors.ErrFindByMerchant
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToProductsRecordMerchantPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *productQueryRepository) FindByCategory(ctx context.Context, req *requests.ProductByCategoryRequest) ([]*record.ProductRecord, *int, error) {
+func (r *productQueryRepository) FindByCategory(ctx context.Context, req *requests.ProductByCategoryRequest) ([]*db.GetProductsByCategoryNameRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetProductsByCategoryNameParams{
@@ -144,38 +131,34 @@ func (r *productQueryRepository) FindByCategory(ctx context.Context, req *reques
 	}
 
 	res, err := r.db.GetProductsByCategoryName(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, product_errors.ErrFindByCategory
 	}
 
 	var totalCount int
-
 	if len(res) > 0 {
 		totalCount = int(res[0].TotalCount)
 	} else {
 		totalCount = 0
 	}
 
-	return r.mapping.ToProductsRecordCategoryPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *productQueryRepository) FindById(ctx context.Context, product_id int) (*record.ProductRecord, error) {
+func (r *productQueryRepository) FindById(ctx context.Context, product_id int) (*db.Product, error) {
 	res, err := r.db.GetProductByID(ctx, int32(product_id))
-
 	if err != nil {
 		return nil, product_errors.ErrFindById
 	}
 
-	return r.mapping.ToProductRecord(res), nil
+	return res, nil
 }
 
-func (r *productQueryRepository) FindByIdTrashed(ctx context.Context, product_id int) (*record.ProductRecord, error) {
+func (r *productQueryRepository) FindByIdTrashed(ctx context.Context, product_id int) (*db.Product, error) {
 	res, err := r.db.GetProductByIdTrashed(ctx, int32(product_id))
-
 	if err != nil {
 		return nil, product_errors.ErrFindByIdTrashed
 	}
 
-	return r.mapping.ToProductRecord(res), nil
+	return res, nil
 }

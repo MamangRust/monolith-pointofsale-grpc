@@ -4,30 +4,52 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/merchant_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 )
 
 type merchantQueryRepository struct {
-	db      *db.Queries
-	ctx     context.Context
-	mapping recordmapper.MerchantRecordMapping
+	client pb.MerchantServiceClient
 }
 
-func NewMerchantQueryRepository(db *db.Queries, mapping recordmapper.MerchantRecordMapping) *merchantQueryRepository {
+func NewMerchantQueryRepository(client pb.MerchantServiceClient) MerchantQueryRepository {
 	return &merchantQueryRepository{
-		db:      db,
-		mapping: mapping,
+		client: client,
 	}
 }
 
-func (r *merchantQueryRepository) FindById(ctx context.Context, user_id int) (*record.MerchantRecord, error) {
-	res, err := r.db.GetMerchantByID(ctx, int32(user_id))
+func parseNullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
 
+func (r *merchantQueryRepository) FindById(ctx context.Context, merchantID int) (*db.Merchant, error) {
+	resp, err := r.client.FindById(ctx, &pb.FindByIdMerchantRequest{
+		Id: int32(merchantID),
+	})
 	if err != nil {
 		return nil, merchant_errors.ErrFindById
 	}
 
-	return r.mapping.ToMerchantRecord(res), nil
+	if resp == nil || resp.Data == nil {
+		return nil, merchant_errors.ErrFindById
+	}
+
+	m := resp.Data
+	res := &db.Merchant{
+		MerchantID:   m.Id,
+		UserID:       m.UserId,
+		Name:         m.Name,
+		Description:  parseNullableString(m.Description),
+		Address:      parseNullableString(m.Address),
+		ContactEmail: parseNullableString(m.ContactEmail),
+		ContactPhone: parseNullableString(m.ContactPhone),
+		Status:       m.Status,
+		CreatedAt:    parsePgTimestamp(m.CreatedAt),
+		UpdatedAt:    parsePgTimestamp(m.UpdatedAt),
+	}
+
+	return res, nil
 }

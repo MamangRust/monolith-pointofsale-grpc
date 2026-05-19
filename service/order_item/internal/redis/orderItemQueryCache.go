@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 const (
@@ -20,28 +21,32 @@ const (
 )
 
 type orderItemQueryCacheResponse struct {
-	Data         []*response.OrderItemResponse `json:"data"`
+	Data         []*db.GetOrderItemsRow `json:"data"`
+	TotalRecords *int                   `json:"total_records"`
+}
+
+type orderItemQueryCacheResponseActive struct {
+	Data         []*db.GetOrderItemsActiveRow `json:"data"`
+	TotalRecords *int                         `json:"total_records"`
+}
+
+type orderItemQueryCacheResponseTrashed struct {
+	Data         []*db.GetOrderItemsTrashedRow `json:"data"`
 	TotalRecords *int                          `json:"total_records"`
 }
 
-type orderItemQueryCacheResponseDeleteAt struct {
-	Data         []*response.OrderItemResponseDeleteAt `json:"data"`
-	TotalRecords *int                                  `json:"total_records"`
-}
-
 type orderItemQueryCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewOrderItemQueryCache(store *CacheStore) *orderItemQueryCache {
+func NewOrderItemQueryCache(store *cache.CacheStore) OrderItemQueryCache {
 	return &orderItemQueryCache{store: store}
 }
 
-func (o *orderItemQueryCache) GetCachedOrderItemsAll(ctx context.Context, req *requests.FindAllOrderItems) ([]*response.OrderItemResponse, *int, bool) {
+func (o *orderItemQueryCache) GetCachedOrderItemsAll(ctx context.Context, req *requests.FindAllOrderItems) ([]*db.GetOrderItemsRow, *int, bool) {
 	key := fmt.Sprintf(orderItemAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[orderItemQueryCacheResponse](ctx, o.store, key)
-
+	result, found := cache.GetFromCache[orderItemQueryCacheResponse](ctx, o.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -49,27 +54,26 @@ func (o *orderItemQueryCache) GetCachedOrderItemsAll(ctx context.Context, req *r
 	return result.Data, result.TotalRecords, true
 }
 
-func (O *orderItemQueryCache) SetCachedOrderItemsAll(ctx context.Context, req *requests.FindAllOrderItems, data []*response.OrderItemResponse, total *int) {
+func (o *orderItemQueryCache) SetCachedOrderItemsAll(ctx context.Context, req *requests.FindAllOrderItems, data []*db.GetOrderItemsRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.OrderItemResponse{}
+		data = []*db.GetOrderItemsRow{}
 	}
 
 	key := fmt.Sprintf(orderItemAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	payload := &orderItemQueryCacheResponse{Data: data, TotalRecords: total}
-	SetToCache(ctx, O.store, key, payload, ttlDefault)
+	cache.SetToCache(ctx, o.store, key, payload, ttlDefault)
 }
 
-func (O *orderItemQueryCache) GetCachedOrderItemActive(ctx context.Context, req *requests.FindAllOrderItems) ([]*response.OrderItemResponseDeleteAt, *int, bool) {
+func (o *orderItemQueryCache) GetCachedOrderItemActive(ctx context.Context, req *requests.FindAllOrderItems) ([]*db.GetOrderItemsActiveRow, *int, bool) {
 	key := fmt.Sprintf(orderItemActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[orderItemQueryCacheResponseDeleteAt](ctx, O.store, key)
-
+	result, found := cache.GetFromCache[orderItemQueryCacheResponseActive](ctx, o.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -77,26 +81,24 @@ func (O *orderItemQueryCache) GetCachedOrderItemActive(ctx context.Context, req 
 	return result.Data, result.TotalRecords, true
 }
 
-func (O *orderItemQueryCache) SetCachedOrderItemActive(ctx context.Context, req *requests.FindAllOrderItems, data []*response.OrderItemResponseDeleteAt, total *int) {
+func (o *orderItemQueryCache) SetCachedOrderItemActive(ctx context.Context, req *requests.FindAllOrderItems, data []*db.GetOrderItemsActiveRow, total *int) {
 	if total == nil {
 		zero := 0
-
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.OrderItemResponseDeleteAt{}
+		data = []*db.GetOrderItemsActiveRow{}
 	}
 
 	key := fmt.Sprintf(orderItemActiveCacheKey, req.Page, req.PageSize, req.Search)
-	payload := &orderItemQueryCacheResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(ctx, O.store, key, payload, ttlDefault)
+	payload := &orderItemQueryCacheResponseActive{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, o.store, key, payload, ttlDefault)
 }
 
-func (O *orderItemQueryCache) GetCachedOrderItemTrashed(ctx context.Context, req *requests.FindAllOrderItems) ([]*response.OrderItemResponseDeleteAt, *int, bool) {
+func (o *orderItemQueryCache) GetCachedOrderItemTrashed(ctx context.Context, req *requests.FindAllOrderItems) ([]*db.GetOrderItemsTrashedRow, *int, bool) {
 	key := fmt.Sprintf(orderItemTrashedCacheKey, req.Page, req.PageSize, req.Search)
-	result, found := GetFromCache[orderItemQueryCacheResponseDeleteAt](ctx, O.store, key)
-
+	result, found := cache.GetFromCache[orderItemQueryCacheResponseTrashed](ctx, o.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -104,25 +106,24 @@ func (O *orderItemQueryCache) GetCachedOrderItemTrashed(ctx context.Context, req
 	return result.Data, result.TotalRecords, true
 }
 
-func (O *orderItemQueryCache) SetCachedOrderItemTrashed(ctx context.Context, req *requests.FindAllOrderItems, data []*response.OrderItemResponseDeleteAt, total *int) {
+func (o *orderItemQueryCache) SetCachedOrderItemTrashed(ctx context.Context, req *requests.FindAllOrderItems, data []*db.GetOrderItemsTrashedRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.OrderItemResponseDeleteAt{}
+		data = []*db.GetOrderItemsTrashedRow{}
 	}
 
 	key := fmt.Sprintf(orderItemTrashedCacheKey, req.Page, req.PageSize, req.Search)
-	payload := &orderItemQueryCacheResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(ctx, O.store, key, payload, ttlDefault)
+	payload := &orderItemQueryCacheResponseTrashed{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, o.store, key, payload, ttlDefault)
 }
 
-func (O *orderItemQueryCache) GetCachedOrderItems(ctx context.Context, order_id int) ([]*response.OrderItemResponse, bool) {
+func (o *orderItemQueryCache) GetCachedOrderItems(ctx context.Context, order_id int) ([]*db.OrderItem, bool) {
 	key := fmt.Sprintf(orderItemByIdCacheKey, order_id)
-	result, found := GetFromCache[[]*response.OrderItemResponse](ctx, O.store, key)
-
+	result, found := cache.GetFromCache[[]*db.OrderItem](ctx, o.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -130,11 +131,11 @@ func (O *orderItemQueryCache) GetCachedOrderItems(ctx context.Context, order_id 
 	return *result, true
 }
 
-func (O *orderItemQueryCache) SetCachedOrderItems(ctx context.Context, data []*response.OrderItemResponse) {
+func (o *orderItemQueryCache) SetCachedOrderItems(ctx context.Context, data []*db.OrderItem) {
 	if len(data) == 0 {
 		return
 	}
 
 	key := fmt.Sprintf(orderItemByIdCacheKey, data[0].OrderID)
-	SetToCache(ctx, O.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, o.store, key, &data, ttlDefault)
 }

@@ -1,0 +1,19 @@
+go 1.25.1
+
+use (
+	./pkg
+	./service/apigateway
+	./service/auth
+	./service/cashier
+	./service/category
+	./service/email
+	./service/merchant
+	./service/migrate
+	./service/order
+	./service/order_item
+	./service/product
+	./service/role
+	./service/transaction
+	./service/user
+	./shared
+)

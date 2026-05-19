@@ -1,211 +1,113 @@
 package handler
 
 import (
-	"context"
-	"errors"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
+	auth_cache "github.com/MamangRust/monolith-point-of-sale-apigateway/internal/redis/api/auth"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/auth_errors"
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
 	response_api "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
 type authHandleApi struct {
-	client          pb.AuthServiceClient
-	logger          logger.LoggerInterface
-	mapping         response_api.AuthResponseMapper
-	trace           trace.Tracer
-	requestCounter  *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
+	client     pb.AuthServiceClient
+	logger     logger.LoggerInterface
+	mapping    response_api.AuthResponseMapper
+	apiHandler errors.ApiHandler
+	cache      auth_cache.AuthMencache
 }
 
-func NewHandlerAuth(router *echo.Echo, client pb.AuthServiceClient, logger logger.LoggerInterface, mapper response_api.AuthResponseMapper) *authHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "auth_handler_requests_total",
-			Help: "Total number of auth requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "auth_handler_request_duration_seconds",
-			Help:    "Duration of auth requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter)
-
+func NewHandlerAuth(
+	router *echo.Echo,
+	client pb.AuthServiceClient,
+	logger logger.LoggerInterface,
+	mapper response_api.AuthResponseMapper,
+	apiHandler errors.ApiHandler,
+	cache auth_cache.AuthMencache,
+) *authHandleApi {
 	authHandler := &authHandleApi{
-		client:          client,
-		logger:          logger,
-		mapping:         mapper,
-		trace:           otel.Tracer("auth-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     client,
+		logger:     logger,
+		mapping:    mapper,
+		apiHandler: apiHandler,
+		cache:      cache,
 	}
 
 	routerAuth := router.Group("/api/auth")
 
-	routerAuth.GET("/verify-code", authHandler.VerifyCode)
-	routerAuth.POST("/forgot-password", authHandler.ForgotPassword)
-	routerAuth.POST("/reset-password", authHandler.ResetPassword)
-	routerAuth.GET("/hello", authHandler.HandleHello)
-	routerAuth.POST("/register", authHandler.Register)
-	routerAuth.POST("/login", authHandler.Login)
-	routerAuth.POST("/refresh-token", authHandler.RefreshToken)
-	routerAuth.GET("/me", authHandler.GetMe)
+	routerAuth.GET("/verify-code", apiHandler.Handle("get-auth-verifycode", authHandler.VerifyCode))
+	routerAuth.POST("/forgot-password", apiHandler.Handle("post-auth-forgotpassword", authHandler.ForgotPassword))
+	routerAuth.POST("/reset-password", apiHandler.Handle("post-auth-resetpassword", authHandler.ResetPassword))
+	routerAuth.GET("/hello", apiHandler.Handle("get-auth-handlehello", authHandler.HandleHello))
+	routerAuth.POST("/register", apiHandler.Handle("post-auth-register", authHandler.Register))
+	routerAuth.POST("/login", apiHandler.Handle("post-auth-login", authHandler.Login))
+	routerAuth.POST("/refresh-token", apiHandler.Handle("post-auth-refreshtoken", authHandler.RefreshToken))
+	routerAuth.GET("/me", apiHandler.Handle("get-auth-getme", authHandler.GetMe))
 
 	return authHandler
 }
 
-// HandleHello godoc
-// @Summary Returns a "Hello" message
-// @Tags Auth
-// @Description Returns a simple "Hello" message for testing purposes.
-// @Produce json
-// @Success 200 {string} string "Hello"
-// @Router /auth/hello [get]
 func (h *authHandleApi) HandleHello(c echo.Context) error {
 	return c.String(200, "Hello")
 }
 
-// VerifyCode godoc
-// @Summary Verifies the user using a verification code
-// @Tags Auth
-// @Description Verifies the user's email using the verification code provided in the query parameter.
-// @Produce json
-// @Param verify_code query string true "Verification Code"
-// @Success 200 {object} response.ApiResponseVerifyCode
-// @Failure 400 {object} response.ErrorResponse
-// @Router /auth/verify-code [get]
 func (h *authHandleApi) VerifyCode(c echo.Context) error {
-	const method = "VerifyCode"
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(
-		ctx,
-		method,
-	)
-	defer func() { end() }()
-
 	verifyCode, err := parseQueryStringRequired(c, "verify_code")
-
 	if err != nil {
-		logError("Failed to parse query string", err, zap.Error(err))
-
-		return auth_errors.ErrApiInvalidVerifyCode(c)
+		return errors.NewBadRequestError("invalid verify_code")
 	}
 
 	res, err := h.client.VerifyCode(ctx, &pb.VerifyCodeRequest{
 		Code: verifyCode,
 	})
 	if err != nil {
-		logError("Failed to verify code", err, zap.Error(err))
-		return auth_errors.ErrApiVerifyCode(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToResponseVerifyCode(res)
-
-	logSuccess("Verification success", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, so)
 }
 
-// ForgotPassword godoc
-// @Summary Sends a reset token to the user's email
-// @Tags Auth
-// @Description Initiates password reset by sending a reset token to the provided email.
-// @Accept json
-// @Produce json
-// @Param request body requests.ForgotPasswordRequest true "Forgot Password Request"
-// @Success 200 {object} response.ApiResponseForgotPassword
-// @Failure 400 {object} response.ErrorResponse
-// @Router /auth/forgot-password [post]
 func (h *authHandleApi) ForgotPassword(c echo.Context) error {
-	const method = "ForgotPassword"
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	var body requests.ForgotPasswordRequest
-
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind forgot password request", err, zap.Error(err))
-
-		return auth_errors.ErrBindForgotPassword(c)
+		return errors.NewBadRequestError("bind failed")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate forgot password request", err, zap.Error(err))
-
-		return auth_errors.ErrValidateForgotPassword(c)
+		return errors.NewBadRequestError("validation failed")
 	}
 
 	res, err := h.client.ForgotPassword(ctx, &pb.ForgotPasswordRequest{
 		Email: body.Email,
 	})
-
 	if err != nil {
-		logError("Failed to forgot password", err, zap.Error(err))
-
-		return auth_errors.ErrApiForgotPassword(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	resp := h.mapping.ToResponseForgotPassword(res)
-
-	logSuccess("Forgot password success", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, resp)
 }
 
-// ResetPassword godoc
-// @Summary Resets the user's password using a reset token
-// @Tags Auth
-// @Description Allows user to reset their password using a valid reset token.
-// @Accept json
-// @Produce json
-// @Param request body requests.CreateResetPasswordRequest true "Reset Password Request"
-// @Success 200 {object} response.ApiResponseResetPassword
-// @Failure 400 {object} response.ErrorResponse
-// @Router /auth/reset-password [post]
 func (h *authHandleApi) ResetPassword(c echo.Context) error {
-	const method = "ResetPassword"
-
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	var body requests.CreateResetPasswordRequest
-
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind reset password request", err, zap.Error(err))
-
-		return auth_errors.ErrBindResetPassword(c)
+		return errors.NewBadRequestError("bind failed")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate reset password request", err, zap.Error(err))
-
-		return auth_errors.ErrValidateResetPassword(c)
+		return errors.NewBadRequestError("validation failed")
 	}
 
 	res, err := h.client.ResetPassword(ctx, &pb.ResetPasswordRequest{
@@ -213,52 +115,24 @@ func (h *authHandleApi) ResetPassword(c echo.Context) error {
 		Password:        body.Password,
 		ConfirmPassword: body.ConfirmPassword,
 	})
-
 	if err != nil {
-		logError("Failed to reset password", err, zap.Error(err))
-
-		return auth_errors.ErrApiResetPassword(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToResponseResetPassword(res)
-
-	logSuccess("Reset password success", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, so)
 }
 
-// Register godoc
-// @Summary Register a new user
-// @Tags Auth
-// @Description Registers a new user with the provided details.
-// @Accept json
-// @Produce json
-// @Param request body requests.CreateUserRequest true "User registration data"
-// @Success 200 {object} response.ApiResponseRegister "Success"
-// @Failure 400 {object} response.ErrorResponse "Bad Request"
-// @Failure 500 {object} response.ErrorResponse "Internal Server Error"
-// @Router /api/auth/register [post]
 func (h *authHandleApi) Register(c echo.Context) error {
-	const method = "Register"
-
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	var body requests.CreateUserRequest
-
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind register request", err, zap.Error(err))
-
-		return auth_errors.ErrBindRegister(c)
+		return errors.NewBadRequestError("bind failed")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate register request", err, zap.Error(err))
-
-		return auth_errors.ErrValidateRegister(c)
+		return errors.NewBadRequestError("validation failed")
 	}
 
 	data := &pb.RegisterRequest{
@@ -270,52 +144,29 @@ func (h *authHandleApi) Register(c echo.Context) error {
 	}
 
 	res, err := h.client.RegisterUser(ctx, data)
-
 	if err != nil {
-		logError("Failed to register user", err, zap.Error(err))
-
-		return auth_errors.ErrApiRegister(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToResponseRegister(res)
-
-	logSuccess("Register success", zap.Bool("success", true))
-
 	return c.JSON(http.StatusOK, so)
 }
 
-// Login godoc
-// @Summary Authenticate a user
-// @Tags Auth
-// @Description Authenticates a user using the provided email and password.
-// @Accept json
-// @Produce json
-// @Param request body requests.AuthRequest true "User login credentials"
-// @Success 200 {object} response.ApiResponseLogin "Success"
-// @Failure 400 {object} response.ErrorResponse "Bad Request"
-// @Failure 500 {object} response.ErrorResponse "Internal Server Error"
-// @Router /api/auth/login [post]
 func (h *authHandleApi) Login(c echo.Context) error {
-	const method = "Login"
-
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	var body requests.AuthRequest
-
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind login request", err, zap.Error(err))
-
-		return auth_errors.ErrBindLogin(c)
+		return errors.NewBadRequestError("bind failed")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate login request", err, zap.Error(err))
+		return errors.NewBadRequestError("validation failed")
+	}
 
-		return auth_errors.ErrValidateRegister(c)
+	// Login Cache Check
+	if cached, found := h.cache.GetCachedLogin(ctx, body.Email); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	data := &pb.LoginRequest{
@@ -324,172 +175,98 @@ func (h *authHandleApi) Login(c echo.Context) error {
 	}
 
 	res, err := h.client.LoginUser(ctx, data)
-
 	if err != nil {
-		logError("Failed to login user", err, zap.Error(err))
-
-		return auth_errors.ErrApiLogin(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	mappedResponse := h.mapping.ToResponseLogin(res)
 
-	logSuccess("Login success", zap.Bool("success", true))
+	// Set Login Cache
+	h.cache.SetCachedLogin(ctx, body.Email, mappedResponse)
 
 	return c.JSON(http.StatusOK, mappedResponse)
 }
 
-// RefreshToken godoc
-// @Summary Refresh access token
-// @Tags Auth
-// @Security Bearer
-// @Description Refreshes the access token using a valid refresh token.
-// @Accept json
-// @Produce json
-// @Param request body requests.RefreshTokenRequest true "Refresh token data"
-// @Success 200 {object} response.ApiResponseRefreshToken "Success"
-// @Failure 400 {object} response.ErrorResponse "Bad Request"
-// @Failure 500 {object} response.ErrorResponse "Internal Server Error"
-// @Router /api/auth/refresh-token [post]
 func (h *authHandleApi) RefreshToken(c echo.Context) error {
-	const method = "RefreshToken"
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	var body requests.RefreshTokenRequest
-
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind refresh token request", err, zap.Error(err))
-
-		return auth_errors.ErrBindRefreshToken(c)
+		return errors.NewBadRequestError("bind failed")
 	}
 
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate refresh token request", err, zap.Error(err))
-
-		return auth_errors.ErrValidateRefreshToken(c)
+		return errors.NewBadRequestError("validation failed")
 	}
 
-	res, err := h.client.RefreshToken(c.Request().Context(), &pb.RefreshTokenRequest{
+	// Refresh Token Cache Check
+	if cached, found := h.cache.GetRefreshToken(ctx, body.RefreshToken); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
+	}
+
+	res, err := h.client.RefreshToken(ctx, &pb.RefreshTokenRequest{
 		RefreshToken: body.RefreshToken,
 	})
-
 	if err != nil {
-		logError("Failed to refresh token", err, zap.Error(err))
-
-		return auth_errors.ErrApiRefreshToken(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToResponseRefreshToken(res)
 
-	logSuccess("Refresh token success", zap.Bool("success", true))
+	// Set Refresh Token Cache
+	h.cache.SetRefreshToken(ctx, body.RefreshToken, so)
 
 	return c.JSON(http.StatusOK, so)
 }
 
-// GetMe godoc
-// @Summary Get current user information
-// @Tags Auth
-// @Security Bearer
-// @Description Retrieves the current user's information using a valid access token from the Authorization header.
-// @Produce json
-// @Security BearerToken
-// @Success 200 {object} response.ApiResponseGetMe "Success"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 500 {object} response.ErrorResponse "Internal Server Error"
-// @Router /api/auth/me [get]
 func (h *authHandleApi) GetMe(c echo.Context) error {
-	const method = "GetMe"
-
 	ctx := c.Request().Context()
 
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	authHeader := c.Request().Header.Get("Authorization")
-
-	h.logger.Debug("Authorization header: ", zap.String("authHeader", authHeader))
-
 	if !strings.HasPrefix(authHeader, "Bearer ") {
-		err := errors.New("invalid authorization header")
+		return errors.ErrUnauthorized.WithMessage("invalid authorization header")
+	}
 
-		logError("Invalid authorization header", err, zap.String("authHeader", authHeader))
+	// Extract userID from context if set by auth middleware
+	var userID string
+	if uVal := c.Get("userID"); uVal != nil {
+		if uStr, ok := uVal.(string); ok {
+			userID = uStr
+		}
+	}
 
-		return auth_errors.ErrInvalidAccessToken(c)
+	// User Info Cache Check
+	if userID != "" {
+		if cached, found := h.cache.GetCachedUserInfo(ctx, userID); found && cached != nil {
+			return c.JSON(http.StatusOK, cached)
+		}
 	}
 
 	accessToken := strings.TrimPrefix(authHeader, "Bearer ")
-
-	res, err := h.client.GetMe(c.Request().Context(), &pb.GetMeRequest{
+	res, err := h.client.GetMe(ctx, &pb.GetMeRequest{
 		AccessToken: accessToken,
 	})
-
 	if err != nil {
-		logError("Failed to get me", err, zap.Error(err))
-
-		return auth_errors.ErrApiGetMe(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToResponseGetMe(res)
 
-	logSuccess("Get me success", zap.Bool("success", true))
+	// Set User Info Cache
+	if userID == "" && so.Data != nil {
+		userID = strconv.Itoa(so.Data.ID)
+	}
+	if userID != "" {
+		h.cache.SetCachedUserInfo(ctx, userID, so)
+	}
 
 	return c.JSON(http.StatusOK, so)
 }
 
-func (s *authHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
+func parseQueryStringRequired(c echo.Context, name string) (string, error) {
+	val := c.QueryParam(name)
+	if val == "" {
+		return "", errors.NewBadRequestError("missing " + name)
 	}
-
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
-
-	status := "success"
-
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *authHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
+	return val, nil
 }

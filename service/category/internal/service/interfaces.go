@@ -3,47 +3,47 @@ package service
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 type CategoryStatsService interface {
-	FindMonthlyTotalPrice(ctx context.Context, req *requests.MonthTotalPrice) ([]*response.CategoriesMonthlyTotalPriceResponse, *response.ErrorResponse)
-	FindYearlyTotalPrice(ctx context.Context, year int) ([]*response.CategoriesYearlyTotalPriceResponse, *response.ErrorResponse)
+	FindMonthlyTotalPrice(ctx context.Context, req *requests.MonthTotalPrice) ([]*db.GetMonthlyTotalPriceRow, error)
+	FindYearlyTotalPrice(ctx context.Context, year int) ([]*db.GetYearlyTotalPriceRow, error)
 
-	FindMonthPrice(ctx context.Context, year int) ([]*response.CategoryMonthPriceResponse, *response.ErrorResponse)
-	FindYearPrice(ctx context.Context, year int) ([]*response.CategoryYearPriceResponse, *response.ErrorResponse)
+	FindMonthPrice(ctx context.Context, year int) ([]*db.GetMonthlyCategoryRow, error)
+	FindYearPrice(ctx context.Context, year int) ([]*db.GetYearlyCategoryRow, error)
 }
 
 type CategoryStatsByIdService interface {
-	FindMonthlyTotalPriceById(ctx context.Context, req *requests.MonthTotalPriceCategory) ([]*response.CategoriesMonthlyTotalPriceResponse, *response.ErrorResponse)
-	FindYearlyTotalPriceById(ctx context.Context, req *requests.YearTotalPriceCategory) ([]*response.CategoriesYearlyTotalPriceResponse, *response.ErrorResponse)
+	FindMonthlyTotalPriceById(ctx context.Context, req *requests.MonthTotalPriceCategory) ([]*db.GetMonthlyTotalPriceByIdRow, error)
+	FindYearlyTotalPriceById(ctx context.Context, req *requests.YearTotalPriceCategory) ([]*db.GetYearlyTotalPriceByIdRow, error)
 
-	FindMonthPriceById(ctx context.Context, req *requests.MonthPriceId) ([]*response.CategoryMonthPriceResponse, *response.ErrorResponse)
-	FindYearPriceById(ctx context.Context, req *requests.YearPriceId) ([]*response.CategoryYearPriceResponse, *response.ErrorResponse)
+	FindMonthPriceById(ctx context.Context, req *requests.MonthPriceId) ([]*db.GetMonthlyCategoryByIdRow, error)
+	FindYearPriceById(ctx context.Context, req *requests.YearPriceId) ([]*db.GetYearlyCategoryByIdRow, error)
 }
 
 type CategoryStatsByMerchantService interface {
-	FindMonthlyTotalPriceByMerchant(ctx context.Context, req *requests.MonthTotalPriceMerchant) ([]*response.CategoriesMonthlyTotalPriceResponse, *response.ErrorResponse)
-	FindYearlyTotalPriceByMerchant(ctx context.Context, req *requests.YearTotalPriceMerchant) ([]*response.CategoriesYearlyTotalPriceResponse, *response.ErrorResponse)
+	FindMonthlyTotalPriceByMerchant(ctx context.Context, req *requests.MonthTotalPriceMerchant) ([]*db.GetMonthlyTotalPriceByMerchantRow, error)
+	FindYearlyTotalPriceByMerchant(ctx context.Context, req *requests.YearTotalPriceMerchant) ([]*db.GetYearlyTotalPriceByMerchantRow, error)
 
-	FindMonthPriceByMerchant(ctx context.Context, req *requests.MonthPriceMerchant) ([]*response.CategoryMonthPriceResponse, *response.ErrorResponse)
-	FindYearPriceByMerchant(ctx context.Context, req *requests.YearPriceMerchant) ([]*response.CategoryYearPriceResponse, *response.ErrorResponse)
+	FindMonthPriceByMerchant(ctx context.Context, req *requests.MonthPriceMerchant) ([]*db.GetMonthlyCategoryByMerchantRow, error)
+	FindYearPriceByMerchant(ctx context.Context, req *requests.YearPriceMerchant) ([]*db.GetYearlyCategoryByMerchantRow, error)
 }
 
 type CategoryQueryService interface {
-	FindAll(ctx context.Context, req *requests.FindAllCategory) ([]*response.CategoryResponse, *int, *response.ErrorResponse)
-	FindById(ctx context.Context, category_id int) (*response.CategoryResponse, *response.ErrorResponse)
-	FindByActive(ctx context.Context, req *requests.FindAllCategory) ([]*response.CategoryResponseDeleteAt, *int, *response.ErrorResponse)
-	FindByTrashed(ctx context.Context, req *requests.FindAllCategory) ([]*response.CategoryResponseDeleteAt, *int, *response.ErrorResponse)
+	FindAll(ctx context.Context, req *requests.FindAllCategory) ([]*db.GetCategoriesRow, *int, error)
+	FindById(ctx context.Context, category_id int) (*db.Category, error)
+	FindByActive(ctx context.Context, req *requests.FindAllCategory) ([]*db.GetCategoriesActiveRow, *int, error)
+	FindByTrashed(ctx context.Context, req *requests.FindAllCategory) ([]*db.GetCategoriesTrashedRow, *int, error)
 }
 
 type CategoryCommandService interface {
-	CreateCategory(ctx context.Context, req *requests.CreateCategoryRequest) (*response.CategoryResponse, *response.ErrorResponse)
-	UpdateCategory(ctx context.Context, req *requests.UpdateCategoryRequest) (*response.CategoryResponse, *response.ErrorResponse)
-	TrashedCategory(ctx context.Context, category_id int) (*response.CategoryResponseDeleteAt, *response.ErrorResponse)
-	RestoreCategory(ctx context.Context, categoryID int) (*response.CategoryResponseDeleteAt, *response.ErrorResponse)
-	DeleteCategoryPermanent(ctx context.Context, categoryID int) (bool, *response.ErrorResponse)
-	RestoreAllCategories(ctx context.Context) (bool, *response.ErrorResponse)
-	DeleteAllCategoriesPermanent(ctx context.Context) (bool, *response.ErrorResponse)
+	CreateCategory(ctx context.Context, req *requests.CreateCategoryRequest) (*db.Category, error)
+	UpdateCategory(ctx context.Context, req *requests.UpdateCategoryRequest) (*db.Category, error)
+	TrashedCategory(ctx context.Context, category_id int) (*db.Category, error)
+	RestoreCategory(ctx context.Context, categoryID int) (*db.Category, error)
+	DeleteCategoryPermanent(ctx context.Context, categoryID int) (bool, error)
+	RestoreAllCategories(ctx context.Context) (bool, error)
+	DeleteAllCategoriesPermanent(ctx context.Context) (bool, error)
 }

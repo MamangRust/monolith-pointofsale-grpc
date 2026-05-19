@@ -2,7 +2,7 @@ package repository
 
 import (
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 )
 
 type Repositories struct {
@@ -13,16 +13,15 @@ type Repositories struct {
 	UserQuery               UserQueryRepository
 }
 
-func NewRepositories(DB *db.Queries) *Repositories {
-	mapper := recordmapper.NewMerchantRecordMapper()
-	mapperDocument := recordmapper.NewMerchantDocumentRecordMapper()
-	mapperUser := recordmapper.NewUserRecordMapper()
-
+func NewRepositories(
+	DB *db.Queries,
+	userClient pb.UserServiceClient,
+) *Repositories {
 	return &Repositories{
-		MerchantQuery:           NewMerchantQueryRepository(DB, mapper),
-		MerchantCommand:         NewMerchantCommandRepository(DB, mapper),
-		MerchantDocumentCommand: NewMerchantDocumentCommandRepository(DB, mapperDocument),
-		MerchantDocumentQuery:   NewMerchantDocumentQueryRepository(DB, mapperDocument),
-		UserQuery:               NewUserQueryRepository(DB, mapperUser),
+		MerchantQuery:           NewMerchantQueryRepository(DB),
+		MerchantCommand:         NewMerchantCommandRepository(DB),
+		MerchantDocumentCommand: NewMerchantDocumentCommandRepository(DB),
+		MerchantDocumentQuery:   NewMerchantDocumentQueryRepository(DB),
+		UserQuery:               NewUserQueryRepository(userClient),
 	}
 }

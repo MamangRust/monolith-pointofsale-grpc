@@ -1,27 +1,27 @@
 package mencache
 
 import (
-	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	"github.com/redis/go-redis/v9"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 )
 
-type Mencache struct {
-	CategoryQueryCache           CategoryQueryCache
-	CategoryCommandCache         CategoryCommandCache
-	CategoryStatsCache           CategoryStatsCache
-	CategoryStatsByIdCache       CategoryStatsByIdCache
-	CategoryStatsByMerchantCache CategoryStatsByMerchantCache
+type Mencache interface {
+	CategoryQueryCache
+	CategoryCommandCache
+	CategoryStatsCache
+	CategoryStatsByIdCache
+	CategoryStatsByMerchantCache
 }
 
-type Deps struct {
-	Redis  *redis.Client
-	Logger logger.LoggerInterface
+type mencache struct {
+	CategoryQueryCache
+	CategoryCommandCache
+	CategoryStatsCache
+	CategoryStatsByIdCache
+	CategoryStatsByMerchantCache
 }
 
-func NewMencache(deps *Deps) *Mencache {
-	cacheStore := NewCacheStore(deps.Redis, deps.Logger)
-
-	return &Mencache{
+func NewMencache(cacheStore *cache.CacheStore) Mencache {
+	return &mencache{
 		CategoryQueryCache:           NewCategoryQueryCache(cacheStore),
 		CategoryCommandCache:         NewCategoryCommandCache(cacheStore),
 		CategoryStatsCache:           NewCategoryStatsCache(cacheStore),

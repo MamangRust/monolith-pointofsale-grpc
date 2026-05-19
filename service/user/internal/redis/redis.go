@@ -1,24 +1,25 @@
 package mencache
 
 import (
-	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	"github.com/redis/go-redis/v9"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 )
 
-type Mencache struct {
-	UserQueryCache   UserQueryCache
-	UserCommandCache UserCommandCache
+type Mencache interface {
+	UserQueryCache
+	UserCommandCache
 }
 
-type Deps struct {
-	Redis  *redis.Client
-	Logger logger.LoggerInterface
+// Mencache is a struct that holds user query and user command caches.
+type mencache struct {
+	UserQueryCache
+	UserCommandCache
 }
 
-func NewMencache(deps *Deps) *Mencache {
-	cacheStore := NewCacheStore(deps.Redis, deps.Logger)
-
-	return &Mencache{
+// NewMencache creates a new instance of Mencache using the given dependencies.
+// It creates a new cache store using the given context, redis client, and logger,
+// and returns a Mencache struct with initialized caches for user query and user command.
+func NewMencache(cacheStore *cache.CacheStore) Mencache {
+	return &mencache{
 		UserQueryCache:   NewUserQueryCache(cacheStore),
 		UserCommandCache: NewUserCommandCache(cacheStore),
 	}

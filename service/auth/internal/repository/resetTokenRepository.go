@@ -5,50 +5,49 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	sharedErrors "github.com/MamangRust/monolith-point-of-sale-shared/errors"
 )
 
 type resetTokenRepository struct {
-	db      *db.Queries
-	mapping recordmapper.ResetTokenRecordMapping
+	db *db.Queries
 }
 
-func NewResetTokenRepository(db *db.Queries, mapping recordmapper.ResetTokenRecordMapping) *resetTokenRepository {
+func NewResetTokenRepository(db *db.Queries) *resetTokenRepository {
 	return &resetTokenRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *resetTokenRepository) FindByToken(ctx context.Context, code string) (*record.ResetTokenRecord, error) {
+func (r *resetTokenRepository) FindByToken(ctx context.Context, code string) (*db.ResetToken, error) {
 	res, err := r.db.GetResetToken(ctx, code)
 	if err != nil {
-		return nil, err
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-	return r.mapping.ToResetTokenRecord(res), nil
+	return res, nil
 }
 
-func (r *resetTokenRepository) CreateResetToken(ctx context.Context, req *requests.CreateResetTokenRequest) (*record.ResetTokenRecord, error) {
+func (r *resetTokenRepository) CreateResetToken(ctx context.Context, req *requests.CreateResetTokenRequest) (*db.ResetToken, error) {
 	expiryDate, err := time.Parse("2006-01-02 15:04:05", req.ExpiredAt)
 	if err != nil {
-		return nil, err
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
+
 	res, err := r.db.CreateResetToken(ctx, db.CreateResetTokenParams{
 		UserID:     int64(req.UserID),
 		Token:      req.ResetToken,
 		ExpiryDate: expiryDate,
 	})
 	if err != nil {
-		return nil, err
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
-	return r.mapping.ToResetTokenRecord(res), nil
+	return res, nil
 }
+
 func (r *resetTokenRepository) DeleteResetToken(ctx context.Context, user_id int) error {
 	err := r.db.DeleteResetToken(ctx, int64(user_id))
 	if err != nil {
-		return err
+		return sharedErrors.ErrInternal.WithInternal(err)
 	}
 	return nil
 }

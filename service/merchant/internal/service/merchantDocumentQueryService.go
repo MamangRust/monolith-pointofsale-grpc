@@ -2,231 +2,180 @@ package service
 
 import (
 	"context"
-	"time"
 
-	"github.com/MamangRust/monolith-point-of-sale-merchant/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-point-of-sale-merchant/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-merchant/internal/repository"
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
+	sharederrorhandler "github.com/MamangRust/monolith-point-of-sale-shared/errorhandler"
 	merchantdocument_errors "github.com/MamangRust/monolith-point-of-sale-shared/errors/merchant_document_errors"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type merchantDocumentQueryService struct {
-	errorhandler                    errorhandler.MerchantDocumentQueryErrorHandler
-	mencache                        mencache.MerchantDocumentQueryCache
-	trace                           trace.Tracer
-	merchantDocumentQueryRepository repository.MerchantDocumentQueryRepository
-	logger                          logger.LoggerInterface
-	mapping                         response_service.MerchantDocumentResponseMapper
-	requestCounter                  *prometheus.CounterVec
-	requestDuration                 *prometheus.HistogramVec
+type merchantDocumentQueryDeps struct {
+	Cache                 mencache.MerchantDocumentQueryCache
+	MerchantDocumentQuery repository.MerchantDocumentQueryRepository
+	Logger                logger.LoggerInterface
+	Observability         observability.TraceLoggerObservability
 }
 
-func NewMerchantDocumentQueryService(
-	errorhandler errorhandler.MerchantDocumentQueryErrorHandler,
-	mencache mencache.MerchantDocumentQueryCache,
-	merchantDocumentQueryRepository repository.MerchantDocumentQueryRepository,
-	logger logger.LoggerInterface,
-	mapping response_service.MerchantDocumentResponseMapper,
-) *merchantDocumentQueryService {
-	requestCounter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "merchant_document_query_request_count",
-		Help: "Number of merchant document query requests MerchantDocumentQueryService",
-	}, []string{"status"})
+type merchantDocumentQueryService struct {
+	mencache                        mencache.MerchantDocumentQueryCache
+	merchantDocumentQueryRepository repository.MerchantDocumentQueryRepository
+	logger                          logger.LoggerInterface
+	observability                   observability.TraceLoggerObservability
+}
 
-	requestDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "merchant_document_query_request_duration_seconds",
-		Help:    "The duration of requests MerchantDocumentQueryService",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"status"})
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
+func NewMerchantDocumentQueryService(params *merchantDocumentQueryDeps) MerchantDocumentQueryService {
 	return &merchantDocumentQueryService{
-		errorhandler:                    errorhandler,
-		mencache:                        mencache,
-		trace:                           otel.Tracer("merchant-document-query-service"),
-		merchantDocumentQueryRepository: merchantDocumentQueryRepository,
-		logger:                          logger,
-		mapping:                         mapping,
-		requestCounter:                  requestCounter,
-		requestDuration:                 requestDuration,
+		mencache:                        params.Cache,
+		merchantDocumentQueryRepository: params.MerchantDocumentQuery,
+		logger:                          params.Logger,
+		observability:                   params.Observability,
 	}
 }
 
-func (s *merchantDocumentQueryService) FindAll(ctx context.Context, req *requests.FindAllMerchantDocuments) ([]*response.MerchantDocumentResponse, *int, *response.ErrorResponse) {
+func (s *merchantDocumentQueryService) FindAll(ctx context.Context, req *requests.FindAllMerchantDocuments) ([]*db.GetMerchantDocumentsRow, *int, error) {
 	const method = "FindAll"
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", req.Search),
+	)
 	defer func() {
 		end(status)
 	}()
 
 	if data, total, found := s.mencache.GetCachedMerchantDocuments(ctx, req); found {
-		logSuccess("Successfully fetched merchant documents from cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
+		logSuccess("Successfully fetched merchant documents from cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", req.Search))
 		return data, total, nil
 	}
 
 	merchantDocuments, total, err := s.merchantDocumentQueryRepository.FindAllDocuments(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_MERCHANT_DOCUMENT", span, &status, zap.Error(err))
+		status = "error"
+		_, handledErr := sharederrorhandler.HandleError[any](
+			s.logger,
+			merchantdocument_errors.ErrFindAllMerchantDocumentsFailed,
+			method,
+			span,
+			zap.Error(err),
+		)
+		return nil, nil, handledErr
 	}
 
-	merchantResponse := s.mapping.ToMerchantDocumentsResponse(merchantDocuments)
-
-	s.mencache.SetCachedMerchantDocuments(ctx, req, merchantResponse, total)
-
-	logSuccess("Successfully fetched merchant documents from database", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return merchantResponse, total, nil
+	s.mencache.SetCachedMerchantDocuments(ctx, req, merchantDocuments, total)
+	logSuccess("Successfully fetched merchant documents", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	return merchantDocuments, total, nil
 }
 
-func (s *merchantDocumentQueryService) FindById(ctx context.Context, merchant_id int) (*response.MerchantDocumentResponse, *response.ErrorResponse) {
+func (s *merchantDocumentQueryService) FindById(ctx context.Context, documentID int) (*db.MerchantDocument, error) {
 	const method = "FindById"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("merchantDocument.id", merchant_id))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("merchantDocument.id", documentID),
+	)
 	defer func() {
 		end(status)
 	}()
 
-	if data, found := s.mencache.GetCachedMerchantDocument(ctx, merchant_id); found {
-		logSuccess("Successfully fetched merchant document from cache", zap.Int("merchantDocument.id", merchant_id))
-
+	if data, found := s.mencache.GetCachedMerchantDocument(ctx, documentID); found {
+		logSuccess("Successfully fetched merchant document from cache", zap.Int("merchantDocument.id", documentID))
 		return data, nil
 	}
 
-	merchantDocument, err := s.merchantDocumentQueryRepository.FindById(ctx, merchant_id)
-
+	merchantDocument, err := s.merchantDocumentQueryRepository.FindById(ctx, documentID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.MerchantDocumentResponse](s.logger, err, method, "FAILED_FIND_MERCHANT_DOCUMENT_BY_ID", span, &status, merchantdocument_errors.ErrMerchantDocumentNotFoundRes, zap.Int("merchantDocument.id", merchant_id))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.MerchantDocument](
+			s.logger,
+			merchantdocument_errors.ErrFindMerchantDocumentByIdFailed,
+			method,
+			span,
+			zap.Int("merchantDocument.id", documentID),
+		)
 	}
 
-	merchantResponse := s.mapping.ToMerchantDocumentResponse(merchantDocument)
-
-	s.mencache.SetCachedMerchantDocument(ctx, merchantResponse)
-
-	logSuccess("Successfully fetched merchant document from database", zap.Int("merchantDocument.id", merchant_id))
-
-	return merchantResponse, nil
+	s.mencache.SetCachedMerchantDocument(ctx, merchantDocument)
+	logSuccess("Successfully fetched merchant document", zap.Int("merchantDocument.id", documentID))
+	return merchantDocument, nil
 }
 
-func (s *merchantDocumentQueryService) FindByActive(ctx context.Context, req *requests.FindAllMerchantDocuments) ([]*response.MerchantDocumentResponse, *int, *response.ErrorResponse) {
+func (s *merchantDocumentQueryService) FindByActive(ctx context.Context, req *requests.FindAllMerchantDocuments) ([]*db.GetActiveMerchantDocumentsRow, *int, error) {
 	const method = "FindByActive"
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", req.Search),
+	)
 	defer func() {
 		end(status)
 	}()
 
-	if data, total, found := s.mencache.GetCachedMerchantDocuments(ctx, req); found {
-		logSuccess("Successfully fetched merchant documents from cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
+	if data, total, found := s.mencache.GetCachedMerchantDocumentsActive(ctx, req); found {
+		logSuccess("Successfully fetched active merchant documents from cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", req.Search))
 		return data, total, nil
 	}
 
 	merchantDocuments, total, err := s.merchantDocumentQueryRepository.FindByActive(ctx, req)
-
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_BY_ACTIVE_MERCHANT_DOCUMENTS", span, &status, zap.Error(err))
+		status = "error"
+		_, handledErr := sharederrorhandler.HandleError[any](
+			s.logger,
+			merchantdocument_errors.ErrFindActiveMerchantDocumentsFailed,
+			method,
+			span,
+			zap.Error(err),
+		)
+		return nil, nil, handledErr
 	}
 
-	merchantResponse := s.mapping.ToMerchantDocumentsResponse(merchantDocuments)
-
-	s.mencache.SetCachedMerchantDocuments(ctx, req, merchantResponse, total)
-
-	logSuccess("Successfully fetched merchant documents from database", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return merchantResponse, total, nil
+	s.mencache.SetCachedMerchantDocumentsActive(ctx, req, merchantDocuments, total)
+	logSuccess("Successfully fetched active merchant documents", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	return merchantDocuments, total, nil
 }
 
-func (s *merchantDocumentQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllMerchantDocuments) ([]*response.MerchantDocumentResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *merchantDocumentQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllMerchantDocuments) ([]*db.GetTrashedMerchantDocumentsRow, *int, error) {
 	const method = "FindByTrashed"
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", req.Search),
+	)
 	defer func() {
 		end(status)
 	}()
 
 	if data, total, found := s.mencache.GetCachedMerchantDocumentsTrashed(ctx, req); found {
-		logSuccess("Successfully fetched merchant documents from cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
+		logSuccess("Successfully fetched trashed merchant documents from cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", req.Search))
 		return data, total, nil
 	}
 
 	merchantDocuments, total, err := s.merchantDocumentQueryRepository.FindByTrashed(ctx, req)
-
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, method, "FAILED_FIND_TRASHED_MERCHANT_DOCUMENTS", span, &status, merchantdocument_errors.ErrFailedFindTrashedMerchantDocuments, zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
+		status = "error"
+		_, handledErr := sharederrorhandler.HandleError[any](
+			s.logger,
+			merchantdocument_errors.ErrFindTrashedMerchantDocumentsFailed,
+			method,
+			span,
+			zap.Error(err),
+		)
+		return nil, nil, handledErr
 	}
 
-	merchantResponse := s.mapping.ToMerchantDocumentsResponseDeleteAt(merchantDocuments)
-
-	s.mencache.SetCachedMerchantDocumentsTrashed(ctx, req, merchantResponse, total)
-
-	logSuccess("Successfully fetched merchant documents from database", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return merchantResponse, total, nil
-}
-
-func (s *merchantDocumentQueryService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
-	context.Context,
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	ctx, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Debug("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	return ctx, span, end, status, logSuccess
+	s.mencache.SetCachedMerchantDocumentsTrashed(ctx, req, merchantDocuments, total)
+	logSuccess("Successfully fetched trashed merchant documents", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	return merchantDocuments, total, nil
 }
 
 func (s *merchantDocumentQueryService) normalizePagination(page, pageSize int) (int, int) {
@@ -237,9 +186,4 @@ func (s *merchantDocumentQueryService) normalizePagination(page, pageSize int) (
 		pageSize = 10
 	}
 	return page, pageSize
-}
-
-func (s *merchantDocumentQueryService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
 }

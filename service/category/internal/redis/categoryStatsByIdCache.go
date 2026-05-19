@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 const (
@@ -17,92 +18,77 @@ const (
 )
 
 type categoryStatsByIdCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewCategoryStatsByIdCache(store *CacheStore) *categoryStatsByIdCache {
+func NewCategoryStatsByIdCache(store *cache.CacheStore) CategoryStatsByIdCache {
 	return &categoryStatsByIdCache{store: store}
 }
 
-func (s *categoryStatsByIdCache) GetCachedMonthTotalPriceByIdCache(ctx context.Context, req *requests.MonthTotalPriceCategory) ([]*response.CategoriesMonthlyTotalPriceResponse, bool) {
+func (s *categoryStatsByIdCache) GetCachedMonthTotalPriceByIdCache(ctx context.Context, req *requests.MonthTotalPriceCategory) ([]*db.GetMonthlyTotalPriceByIdRow, bool) {
 	key := fmt.Sprintf(categoryStatsByIdMonthTotalPriceCacheKey, req.CategoryID, req.Month, req.Year)
-
-	result, found := GetFromCache[[]*response.CategoriesMonthlyTotalPriceResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyTotalPriceByIdRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *categoryStatsByIdCache) SetCachedMonthTotalPriceByIdCache(ctx context.Context, req *requests.MonthTotalPriceCategory, data []*response.CategoriesMonthlyTotalPriceResponse) {
+func (s *categoryStatsByIdCache) SetCachedMonthTotalPriceByIdCache(ctx context.Context, req *requests.MonthTotalPriceCategory, data []*db.GetMonthlyTotalPriceByIdRow) {
 	if data == nil {
 		return
 	}
-
 	key := fmt.Sprintf(categoryStatsByIdMonthTotalPriceCacheKey, req.CategoryID, req.Month, req.Year)
-
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }
 
-func (s *categoryStatsByIdCache) GetCachedYearTotalPriceByIdCache(ctx context.Context, req *requests.YearTotalPriceCategory) ([]*response.CategoriesYearlyTotalPriceResponse, bool) {
+func (s *categoryStatsByIdCache) GetCachedYearTotalPriceByIdCache(ctx context.Context, req *requests.YearTotalPriceCategory) ([]*db.GetYearlyTotalPriceByIdRow, bool) {
 	key := fmt.Sprintf(categoryStatsByIdYearTotalPriceCacheKey, req.CategoryID, req.Year)
-
-	result, found := GetFromCache[[]*response.CategoriesYearlyTotalPriceResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyTotalPriceByIdRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *categoryStatsByIdCache) SetCachedYearTotalPriceByIdCache(ctx context.Context, req *requests.YearTotalPriceCategory, data []*response.CategoriesYearlyTotalPriceResponse) {
+func (s *categoryStatsByIdCache) SetCachedYearTotalPriceByIdCache(ctx context.Context, req *requests.YearTotalPriceCategory, data []*db.GetYearlyTotalPriceByIdRow) {
 	if data == nil {
 		return
 	}
-
 	key := fmt.Sprintf(categoryStatsByIdYearTotalPriceCacheKey, req.CategoryID, req.Year)
-
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }
 
-func (s *categoryStatsByIdCache) GetCachedMonthPriceByIdCache(ctx context.Context, req *requests.MonthPriceId) ([]*response.CategoryMonthPriceResponse, bool) {
+func (s *categoryStatsByIdCache) GetCachedMonthPriceByIdCache(ctx context.Context, req *requests.MonthPriceId) ([]*db.GetMonthlyCategoryByIdRow, bool) {
 	key := fmt.Sprintf(categoryStatsByIdMonthPriceCacheKey, req.CategoryID, req.Year)
-
-	result, found := GetFromCache[[]*response.CategoryMonthPriceResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyCategoryByIdRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *categoryStatsByIdCache) SetCachedMonthPriceByIdCache(ctx context.Context, req *requests.MonthPriceId, data []*response.CategoryMonthPriceResponse) {
+func (s *categoryStatsByIdCache) SetCachedMonthPriceByIdCache(ctx context.Context, req *requests.MonthPriceId, data []*db.GetMonthlyCategoryByIdRow) {
 	if data == nil {
 		return
 	}
-
 	key := fmt.Sprintf(categoryStatsByIdMonthPriceCacheKey, req.CategoryID, req.Year)
-
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }
 
-func (s *categoryStatsByIdCache) GetCachedYearPriceByIdCache(ctx context.Context, req *requests.YearPriceId) ([]*response.CategoryYearPriceResponse, bool) {
+func (s *categoryStatsByIdCache) GetCachedYearPriceByIdCache(ctx context.Context, req *requests.YearPriceId) ([]*db.GetYearlyCategoryByIdRow, bool) {
 	key := fmt.Sprintf(categoryStatsByIdYearPriceCacheKey, req.CategoryID, req.Year)
-
-	result, found := GetFromCache[[]*response.CategoryYearPriceResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyCategoryByIdRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *categoryStatsByIdCache) SetCachedYearPriceByIdCache(ctx context.Context, req *requests.YearPriceId, data []*response.CategoryYearPriceResponse) {
+func (s *categoryStatsByIdCache) SetCachedYearPriceByIdCache(ctx context.Context, req *requests.YearPriceId, data []*db.GetYearlyCategoryByIdRow) {
 	key := fmt.Sprintf(categoryStatsByIdYearPriceCacheKey, req.CategoryID, req.Year)
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	if data == nil {
+		return
+	}
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }

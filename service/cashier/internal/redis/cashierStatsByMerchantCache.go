@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 const (
@@ -17,77 +18,77 @@ const (
 )
 
 type cashierStatsByMerchantCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewCashierStatsByMerchantCache(store *CacheStore) *cashierStatsByMerchantCache {
+func NewCashierStatsByMerchantCache(store *cache.CacheStore) CashierStatsByMerchantCache {
 	return &cashierStatsByMerchantCache{store: store}
 }
 
-func (s *cashierStatsByMerchantCache) GetMonthlyTotalSalesByMerchantCache(ctx context.Context, req *requests.MonthTotalSalesMerchant) ([]*response.CashierResponseMonthTotalSales, bool) {
+func (s *cashierStatsByMerchantCache) GetMonthlyTotalSalesByMerchantCache(ctx context.Context, req *requests.MonthTotalSalesMerchant) ([]*db.GetMonthlyTotalSalesByMerchantRow, bool) {
 	key := fmt.Sprintf(cashierStatsMonthTotalSalesByMerchantCacheKey, req.Month, req.Year, req.MerchantID)
-	result, found := GetFromCache[[]*response.CashierResponseMonthTotalSales](ctx, s.store, key)
+	result, found := cache.GetFromCache[[]*db.GetMonthlyTotalSalesByMerchantRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
-func (s *cashierStatsByMerchantCache) SetMonthlyTotalSalesByMerchantCache(ctx context.Context, req *requests.MonthTotalSalesMerchant, res []*response.CashierResponseMonthTotalSales) {
+func (s *cashierStatsByMerchantCache) SetMonthlyTotalSalesByMerchantCache(ctx context.Context, req *requests.MonthTotalSalesMerchant, res []*db.GetMonthlyTotalSalesByMerchantRow) {
 	if res == nil {
 		return
 	}
 	key := fmt.Sprintf(cashierStatsMonthTotalSalesByMerchantCacheKey, req.Month, req.Year, req.MerchantID)
-	SetToCache(ctx, s.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &res, ttlDefault)
 }
 
-func (s *cashierStatsByMerchantCache) GetYearlyTotalSalesByMerchantCache(ctx context.Context, req *requests.YearTotalSalesMerchant) ([]*response.CashierResponseYearTotalSales, bool) {
+func (s *cashierStatsByMerchantCache) GetYearlyTotalSalesByMerchantCache(ctx context.Context, req *requests.YearTotalSalesMerchant) ([]*db.GetYearlyTotalSalesByMerchantRow, bool) {
 	key := fmt.Sprintf(cashierStatsYearTotalSalesByMerchantCacheKey, req.Year, req.MerchantID)
-	result, found := GetFromCache[[]*response.CashierResponseYearTotalSales](ctx, s.store, key)
+	result, found := cache.GetFromCache[[]*db.GetYearlyTotalSalesByMerchantRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
-func (s *cashierStatsByMerchantCache) SetYearlyTotalSalesByMerchantCache(ctx context.Context, req *requests.YearTotalSalesMerchant, res []*response.CashierResponseYearTotalSales) {
+func (s *cashierStatsByMerchantCache) SetYearlyTotalSalesByMerchantCache(ctx context.Context, req *requests.YearTotalSalesMerchant, res []*db.GetYearlyTotalSalesByMerchantRow) {
 	if res == nil {
 		return
 	}
 	key := fmt.Sprintf(cashierStatsYearTotalSalesByMerchantCacheKey, req.Year, req.MerchantID)
-	SetToCache(ctx, s.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &res, ttlDefault)
 }
 
-func (s *cashierStatsByMerchantCache) GetMonthlyCashierByMerchantCache(ctx context.Context, req *requests.MonthCashierMerchant) ([]*response.CashierResponseMonthSales, bool) {
+func (s *cashierStatsByMerchantCache) GetMonthlyCashierByMerchantCache(ctx context.Context, req *requests.MonthCashierMerchant) ([]*db.GetMonthlyCashierByMerchantRow, bool) {
 	key := fmt.Sprintf(cashierStatsMonthSalesByMerchantCacheKey, req.Year, req.MerchantID)
-	result, found := GetFromCache[[]*response.CashierResponseMonthSales](ctx, s.store, key)
+	result, found := cache.GetFromCache[[]*db.GetMonthlyCashierByMerchantRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
-func (s *cashierStatsByMerchantCache) SetMonthlyCashierByMerchantCache(ctx context.Context, req *requests.MonthCashierMerchant, res []*response.CashierResponseMonthSales) {
+func (s *cashierStatsByMerchantCache) SetMonthlyCashierByMerchantCache(ctx context.Context, req *requests.MonthCashierMerchant, res []*db.GetMonthlyCashierByMerchantRow) {
 	if res == nil {
 		return
 	}
 	key := fmt.Sprintf(cashierStatsMonthSalesByMerchantCacheKey, req.Year, req.MerchantID)
-	SetToCache(ctx, s.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &res, ttlDefault)
 }
 
-func (s *cashierStatsByMerchantCache) GetYearlyCashierByMerchantCache(ctx context.Context, req *requests.YearCashierMerchant) ([]*response.CashierResponseYearSales, bool) {
+func (s *cashierStatsByMerchantCache) GetYearlyCashierByMerchantCache(ctx context.Context, req *requests.YearCashierMerchant) ([]*db.GetYearlyCashierByMerchantRow, bool) {
 	key := fmt.Sprintf(cashierStatsYearSalesByMerchantCacheKey, req.Year, req.MerchantID)
-	result, found := GetFromCache[[]*response.CashierResponseYearSales](ctx, s.store, key)
+	result, found := cache.GetFromCache[[]*db.GetYearlyCashierByMerchantRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
 	return *result, true
 }
 
-func (s *cashierStatsByMerchantCache) SetYearlyCashierByMerchantCache(ctx context.Context, req *requests.YearCashierMerchant, res []*response.CashierResponseYearSales) {
+func (s *cashierStatsByMerchantCache) SetYearlyCashierByMerchantCache(ctx context.Context, req *requests.YearCashierMerchant, res []*db.GetYearlyCashierByMerchantRow) {
 	if res == nil {
 		return
 	}
 	key := fmt.Sprintf(cashierStatsYearSalesByMerchantCacheKey, req.Year, req.MerchantID)
-	SetToCache(ctx, s.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &res, ttlDefault)
 }

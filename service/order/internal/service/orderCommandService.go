@@ -2,33 +2,39 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"time"
 
-	"github.com/MamangRust/monolith-point-of-sale-order/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-point-of-sale-order/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-order/internal/repository"
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
+	sharederrorhandler "github.com/MamangRust/monolith-point-of-sale-shared/errorhandler"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/cashier_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/merchant_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/order_errors"
 	orderitem_errors "github.com/MamangRust/monolith-point-of-sale-shared/errors/order_item_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/product_errors"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
+type orderCommandDeps struct {
+	Cache                      mencache.OrderCommandCache
+	CashierQueryRepository     repository.CashierQueryRepository
+	OrderQueryRepository       repository.OrderQueryRepository
+	OrderCommandRepository     repository.OrderCommandRepository
+	OrderItemQueryRepository   repository.OrderItemQueryRepository
+	OrderItemCommandRepository repository.OrderItemCommandRepository
+	MerchantQueryRepository    repository.MerchantQueryRepository
+	ProductQueryRepository     repository.ProductQueryRepository
+	ProductCommandRepository   repository.ProductCommandRepository
+	Logger                     logger.LoggerInterface
+	Observability              observability.TraceLoggerObservability
+}
+
 type orderCommandService struct {
-	errorhandler               errorhandler.OrderCommandError
 	mencache                   mencache.OrderCommandCache
-	trace                      trace.Tracer
 	cashierQueryRepository     repository.CashierQueryRepository
 	orderQueryRepository       repository.OrderQueryRepository
 	orderCommandRepository     repository.OrderCommandRepository
@@ -38,81 +44,58 @@ type orderCommandService struct {
 	productQueryRepository     repository.ProductQueryRepository
 	productCommandRepository   repository.ProductCommandRepository
 	logger                     logger.LoggerInterface
-	mapping                    response_service.OrderResponseMapper
-	requestCounter             *prometheus.CounterVec
-	requestDuration            *prometheus.HistogramVec
+	observability              observability.TraceLoggerObservability
 }
 
-func NewOrderCommandService(
-	errorhandler errorhandler.OrderCommandError,
-	mencache mencache.OrderCommandCache,
-	cashierQueryRepository repository.CashierQueryRepository,
-	orderItemQueryRepository repository.OrderItemQueryRepository,
-	orderItemCommandRepository repository.OrderItemCommandRepository,
-	orderQueryRepository repository.OrderQueryRepository,
-	orderCommandRepository repository.OrderCommandRepository,
-	productQueryRepository repository.ProductQueryRepository,
-	productCommandRepository repository.ProductCommandRepository,
-	merchantQueryRepository repository.MerchantQueryRepository,
-	logger logger.LoggerInterface,
-	mapping response_service.OrderResponseMapper,
-
-) *orderCommandService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "order_command_service_request_count",
-			Help: "Total number of requests to the OrderCommandService",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "order_command_service_request_duration",
-			Help:    "Histogram of request durations for the OrderCommandService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
+func NewOrderCommandService(params *orderCommandDeps) OrderCommandService {
 	return &orderCommandService{
-		errorhandler:               errorhandler,
-		mencache:                   mencache,
-		trace:                      otel.Tracer("order-command-service"),
-		cashierQueryRepository:     cashierQueryRepository,
-		orderQueryRepository:       orderQueryRepository,
-		orderCommandRepository:     orderCommandRepository,
-		orderItemQueryRepository:   orderItemQueryRepository,
-		orderItemCommandRepository: orderItemCommandRepository,
-		merchantQueryRepository:    merchantQueryRepository,
-		productQueryRepository:     productQueryRepository,
-		productCommandRepository:   productCommandRepository,
-		logger:                     logger,
-		mapping:                    mapping,
-		requestCounter:             requestCounter,
-		requestDuration:            requestDuration,
+		mencache:                   params.Cache,
+		cashierQueryRepository:     params.CashierQueryRepository,
+		orderQueryRepository:       params.OrderQueryRepository,
+		orderCommandRepository:     params.OrderCommandRepository,
+		orderItemQueryRepository:   params.OrderItemQueryRepository,
+		orderItemCommandRepository: params.OrderItemCommandRepository,
+		merchantQueryRepository:    params.MerchantQueryRepository,
+		productQueryRepository:     params.ProductQueryRepository,
+		productCommandRepository:   params.ProductCommandRepository,
+		logger:                     params.Logger,
+		observability:              params.Observability,
 	}
 }
 
-func (s *orderCommandService) CreateOrder(ctx context.Context, req *requests.CreateOrderRequest) (*response.OrderResponse, *response.ErrorResponse) {
+func (s *orderCommandService) CreateOrder(ctx context.Context, req *requests.CreateOrderRequest) (*db.Order, error) {
 	const method = "CreateOrder"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("merchant.id", req.MerchantID), attribute.Int("cashier.id", req.CashierID))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("merchant.id", req.MerchantID),
+		attribute.Int("cashier.id", req.CashierID),
+	)
 	defer func() {
 		end(status)
 	}()
 
 	_, err := s.merchantQueryRepository.FindById(ctx, req.MerchantID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_FIND_MERCHANT_BY_ID", span, &status, merchant_errors.ErrFailedFindMerchantById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			merchant_errors.ErrFailedFindMerchantById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	_, err = s.cashierQueryRepository.FindById(ctx, req.CashierID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_FIND_CASHIER_BY_ID", span, &status, cashier_errors.ErrFailedFindCashierById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			cashier_errors.ErrFailedFindCashierById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	order, err := s.orderCommandRepository.CreateOrder(ctx, &requests.CreateOrderRecordRequest{
@@ -120,84 +103,134 @@ func (s *orderCommandService) CreateOrder(ctx context.Context, req *requests.Cre
 		CashierID:  req.CashierID,
 	})
 	if err != nil {
-		return s.errorhandler.HandleCreateOrderError(err, method, "FAILED_CREATE_ORDER", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedCreateOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	span.SetAttributes(attribute.Int("order.id", order.ID))
+	span.SetAttributes(attribute.Int("order.id", int(order.OrderID)))
 
 	for _, item := range req.Items {
-
 		product, err := s.productQueryRepository.FindById(ctx, item.ProductID)
 		if err != nil {
-			return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_FIND_PRODUCT_BY_ID", span, &status, product_errors.ErrFailedFindProductById, zap.Error(err))
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				product_errors.ErrFailedFindProductById.WithInternal(err),
+				method,
+				span,
+				zap.Error(err),
+			)
 		}
 
-		if product.CountInStock < item.Quantity {
-			return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_FIND_PRODUCT_BY_ID", span, &status, product_errors.ErrFailedFindProductById, zap.Error(err))
+		if product.CountInStock < int32(item.Quantity) {
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				order_errors.ErrInsufficientProductStock,
+				method,
+				span,
+			)
 		}
 
 		_, err = s.orderItemCommandRepository.CreateOrderItem(ctx, &requests.CreateOrderItemRecordRequest{
-			OrderID:   order.ID,
+			OrderID:   int(order.OrderID),
 			ProductID: item.ProductID,
 			Quantity:  item.Quantity,
-			Price:     product.Price,
+			Price:     int(product.Price),
 		})
 		if err != nil {
-			return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_CREATE_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedCreateOrderItem, zap.Error(err))
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				orderitem_errors.ErrFailedCreateOrderItem.WithInternal(err),
+				method,
+				span,
+				zap.Error(err),
+			)
 		}
 
-		product.CountInStock -= item.Quantity
-		_, err = s.productCommandRepository.UpdateProductCountStock(ctx, product.ID, product.CountInStock)
+		newStock := int(product.CountInStock) - item.Quantity
+		_, err = s.productCommandRepository.UpdateProductCountStock(ctx, int(product.ProductID), newStock)
 		if err != nil {
-			return s.errorhandler.HandleErrorInvalidCountStockTemplate(err, method, "FAILED_UPDATE_PRODUCT_COUNT_STOCK", span, &status, product_errors.ErrFailedUpdateProduct, zap.Error(err))
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				product_errors.ErrFailedUpdateProduct.WithInternal(err),
+				method,
+				span,
+				zap.Error(err),
+			)
 		}
-
 	}
 
-	totalPrice, err := s.orderItemQueryRepository.CalculateTotalPrice(ctx, order.ID)
+	totalPrice, err := s.orderItemQueryRepository.CalculateTotalPrice(ctx, int(order.OrderID))
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_CALCULATE_TOTAL_PRICE", span, &status, orderitem_errors.ErrFailedCalculateTotal, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			orderitem_errors.ErrFailedCalculateTotal.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	_, err = s.orderCommandRepository.UpdateOrder(ctx, &requests.UpdateOrderRecordRequest{
-		OrderID:    order.ID,
+	res, err := s.orderCommandRepository.UpdateOrder(ctx, &requests.UpdateOrderRecordRequest{
+		OrderID:    int(order.OrderID),
 		TotalPrice: int(*totalPrice),
 	})
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_UPDATE_ORDER", span, &status, order_errors.ErrFailedUpdateOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedUpdateOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToOrderResponse(order)
-
-	logSuccess("Successfully create order", zap.Int("order.id", order.ID))
-
-	return so, nil
+	logSuccess("Successfully created order", zap.Int("order.id", int(res.OrderID)))
+	return res, nil
 }
 
-func (s *orderCommandService) UpdateOrder(ctx context.Context, req *requests.UpdateOrderRequest) (*response.OrderResponse, *response.ErrorResponse) {
+func (s *orderCommandService) UpdateOrder(ctx context.Context, req *requests.UpdateOrderRequest) (*db.Order, error) {
 	const method = "UpdateOrder"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("order.id", *req.OrderID))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("order.id", *req.OrderID))
 	defer func() {
 		end(status)
 	}()
 
 	_, err := s.orderQueryRepository.FindById(ctx, *req.OrderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_FIND_ORDER_BY_ID", span, &status, order_errors.ErrFailedFindOrderById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedFindOrderById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	for i, item := range req.Items {
-		_, itemSpan := s.trace.Start(ctx, fmt.Sprintf("ProcessItem-%d", i))
-		itemSpan.SetAttributes(
-			attribute.Int("item.product_id", item.ProductID),
-			attribute.Int("item.quantity", item.Quantity),
-		)
-
+	for _, item := range req.Items {
 		product, err := s.productQueryRepository.FindById(ctx, item.ProductID)
 		if err != nil {
-			return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_FIND_PRODUCT_BY_ID", span, &status, product_errors.ErrFailedFindProductById, zap.Error(err))
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				product_errors.ErrFailedFindProductById.WithInternal(err),
+				method,
+				span,
+				zap.Error(err),
+			)
 		}
 
 		if item.OrderItemID > 0 {
@@ -205,38 +238,71 @@ func (s *orderCommandService) UpdateOrder(ctx context.Context, req *requests.Upd
 				OrderItemID: item.OrderItemID,
 				ProductID:   item.ProductID,
 				Quantity:    item.Quantity,
-				Price:       product.Price,
+				Price:       int(product.Price),
 			})
 			if err != nil {
-				return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_UPDATE_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedUpdateOrderItem, zap.Error(err))
+				status = "error"
+				return sharederrorhandler.HandleError[*db.Order](
+					s.logger,
+					orderitem_errors.ErrFailedUpdateOrderItem.WithInternal(err),
+					method,
+					span,
+					zap.Error(err),
+				)
 			}
 		} else {
-			if product.CountInStock < item.Quantity {
-				return s.errorhandler.HandleErrorInsufficientStockTemplate(err, method, "FAILED_INSUFFICIENT_STOCK", span, &status, order_errors.ErrFailedInvalidCountInStock, zap.Error(err))
+			if product.CountInStock < int32(item.Quantity) {
+				status = "error"
+				return sharederrorhandler.HandleError[*db.Order](
+					s.logger,
+					order_errors.ErrInsufficientProductStock,
+					method,
+					span,
+				)
 			}
 
 			_, err := s.orderItemCommandRepository.CreateOrderItem(ctx, &requests.CreateOrderItemRecordRequest{
 				OrderID:   *req.OrderID,
 				ProductID: item.ProductID,
 				Quantity:  item.Quantity,
-				Price:     product.Price,
+				Price:     int(product.Price),
 			})
 			if err != nil {
-				return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_CREATE_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedCreateOrderItem, zap.Error(err))
+				status = "error"
+				return sharederrorhandler.HandleError[*db.Order](
+					s.logger,
+					orderitem_errors.ErrFailedCreateOrderItem.WithInternal(err),
+					method,
+					span,
+					zap.Error(err),
+				)
 			}
 
-			product.CountInStock -= item.Quantity
-			_, err = s.productCommandRepository.UpdateProductCountStock(ctx, product.ID, product.CountInStock)
+			newStock := int(product.CountInStock) - item.Quantity
+			_, err = s.productCommandRepository.UpdateProductCountStock(ctx, int(product.ProductID), newStock)
 			if err != nil {
-				return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_UPDATE_PRODUCT_COUNT_STOCK", span, &status, product_errors.ErrFailedCountStock, zap.Error(err))
+				status = "error"
+				return sharederrorhandler.HandleError[*db.Order](
+					s.logger,
+					product_errors.ErrFailedUpdateProduct.WithInternal(err),
+					method,
+					span,
+					zap.Error(err),
+				)
 			}
 		}
-		itemSpan.End()
 	}
 
 	totalPrice, err := s.orderItemQueryRepository.CalculateTotalPrice(ctx, *req.OrderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_CALCULATE_TOTAL_PRICE", span, &status, orderitem_errors.ErrFailedCalculateTotal, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			orderitem_errors.ErrFailedCalculateTotal.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	res, err := s.orderCommandRepository.UpdateOrder(ctx, &requests.UpdateOrderRecordRequest{
@@ -244,233 +310,276 @@ func (s *orderCommandService) UpdateOrder(ctx context.Context, req *requests.Upd
 		TotalPrice: int(*totalPrice),
 	})
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponse](s.logger, err, method, "FAILED_UPDATE_ORDER", span, &status, order_errors.ErrFailedUpdateOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedUpdateOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToOrderResponse(res)
-
 	s.mencache.DeleteOrderCache(ctx, *req.OrderID)
-
 	logSuccess("Successfully updated order", zap.Int("order.id", *req.OrderID))
-
-	return so, nil
+	return res, nil
 }
 
-func (s *orderCommandService) TrashedOrder(ctx context.Context, orderID int) (*response.OrderResponseDeleteAt, *response.ErrorResponse) {
+func (s *orderCommandService) TrashedOrder(ctx context.Context, orderID int) (*db.Order, error) {
 	const method = "TrashedOrder"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("order.id", orderID))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("order.id", orderID))
 	defer func() {
 		end(status)
 	}()
 
 	order, err := s.orderQueryRepository.FindById(ctx, orderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_FIND_ORDER_BY_ID", span, &status, order_errors.ErrFailedFindOrderById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedFindOrderById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	if order.DeletedAt != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_NOT_DELETE_AT_ORDER", span, &status, order_errors.ErrFailedNotDeleteAtOrder, zap.Error(err))
+	if order.DeletedAt.Valid {
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedNotDeleteAtOrder,
+			method,
+			span,
+		)
 	}
 
 	orderItems, err := s.orderItemQueryRepository.FindOrderItemByOrder(ctx, orderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_FIND_ORDER_ITEM_BY_ORDER", span, &status, orderitem_errors.ErrFailedFindOrderItemByOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			orderitem_errors.ErrFailedFindOrderItemByOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	for _, item := range orderItems {
-		if item.DeletedAt != nil {
-			return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_NOT_DELETE_AT_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedNotDeleteAtOrderItem, zap.Error(err))
+		if item.DeletedAt.Valid {
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				orderitem_errors.ErrFailedNotDeleteAtOrderItem,
+				method,
+				span,
+			)
 		}
 
-		trashedItem, err := s.orderItemCommandRepository.TrashedOrderItem(ctx, item.ID)
-
+		trashedItem, err := s.orderItemCommandRepository.TrashedOrderItem(ctx, int(item.OrderItemID))
 		if err != nil {
-			return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_TRASH_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedTrashedOrderItem, zap.Error(err))
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				orderitem_errors.ErrFailedTrashedOrderItem.WithInternal(err),
+				method,
+				span,
+				zap.Error(err),
+			)
 		}
 
 		s.logger.Debug("Order item trashed successfully",
-			zap.Int("order_item_id", trashedItem.ID),
-			zap.String("deleted_at", *trashedItem.DeletedAt))
+			zap.Int("order_item_id", int(trashedItem.OrderItemID)),
+			zap.Time("deleted_at", trashedItem.DeletedAt.Time))
 	}
 
 	trashedOrder, err := s.orderCommandRepository.TrashedOrder(ctx, orderID)
-
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_TRASH_ORDER", span, &status, order_errors.ErrFailedTrashOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedTrashOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
-
-	so := s.mapping.ToOrderResponseDeleteAt(trashedOrder)
 
 	s.mencache.DeleteOrderCache(ctx, orderID)
-
 	logSuccess("Successfully trashed order", zap.Int("order.id", orderID))
-
-	return so, nil
+	return trashedOrder, nil
 }
 
-func (s *orderCommandService) RestoreOrder(ctx context.Context, order_id int) (*response.OrderResponseDeleteAt, *response.ErrorResponse) {
+func (s *orderCommandService) RestoreOrder(ctx context.Context, orderID int) (*db.Order, error) {
 	const method = "RestoreOrder"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("order.id", order_id))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("order.id", orderID))
 	defer func() {
 		end(status)
 	}()
 
-	orderItems, err := s.orderItemQueryRepository.FindOrderItemByOrder(ctx, order_id)
-
+	orderItems, err := s.orderItemQueryRepository.FindOrderItemByOrder(ctx, orderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_FIND_ORDER_ITEM_BY_ORDER", span, &status, orderitem_errors.ErrFailedFindOrderItemByOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			orderitem_errors.ErrFailedFindOrderItemByOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	for _, item := range orderItems {
-		_, err := s.orderItemCommandRepository.RestoreOrderItem(ctx, item.ID)
-
+		_, err := s.orderItemCommandRepository.RestoreOrderItem(ctx, int(item.OrderItemID))
 		if err != nil {
-			return errorhandler.HandleRepositorySingleError[*response.OrderResponseDeleteAt](s.logger, err, method, "FAILED_RESTORE_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedRestoreOrderItem, zap.Error(err))
+			status = "error"
+			return sharederrorhandler.HandleError[*db.Order](
+				s.logger,
+				orderitem_errors.ErrFailedRestoreOrderItem.WithInternal(err),
+				method,
+				span,
+				zap.Error(err),
+			)
 		}
 	}
 
-	order, err := s.orderCommandRepository.RestoreOrder(ctx, order_id)
-
+	order, err := s.orderCommandRepository.RestoreOrder(ctx, orderID)
 	if err != nil {
-		return s.errorhandler.HandleRestoreOrderError(err, method, "FAILED_RESTORE_ORDER", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Order](
+			s.logger,
+			order_errors.ErrFailedRestoreOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToOrderResponseDeleteAt(order)
-
-	logSuccess("Successfully restored order", zap.Int("order.id", order_id))
-
-	return so, nil
+	logSuccess("Successfully restored order", zap.Int("order.id", orderID))
+	return order, nil
 }
 
-func (s *orderCommandService) DeleteOrderPermanent(ctx context.Context, order_id int) (bool, *response.ErrorResponse) {
+func (s *orderCommandService) DeleteOrderPermanent(ctx context.Context, orderID int) (bool, error) {
 	const method = "DeleteOrderPermanent"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("order.id", order_id))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("order.id", orderID))
 	defer func() {
 		end(status)
 	}()
 
-	orderItems, err := s.orderItemQueryRepository.FindOrderItemByOrder(ctx, order_id)
-
+	orderItems, err := s.orderItemQueryRepository.FindOrderItemByOrder(ctx, orderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[bool](s.logger, err, method, "FAILED_FIND_ORDER_ITEM_BY_ORDER", span, &status, orderitem_errors.ErrFailedFindOrderItemByOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			orderitem_errors.ErrFailedFindOrderItemByOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	for _, item := range orderItems {
-		_, err := s.orderItemCommandRepository.
-			DeleteOrderItemPermanent(ctx, item.ID)
-
+		_, err := s.orderItemCommandRepository.DeleteOrderItemPermanent(ctx, int(item.OrderItemID))
 		if err != nil {
-			return errorhandler.HandleRepositorySingleError[bool](s.logger, err, method, "FAILED_DELETE_ORDER_ITEM_PERMANENT", span, &status, orderitem_errors.ErrFailedDeleteOrderItem, zap.Error(err))
+			status = "error"
+			return sharederrorhandler.HandleError[bool](
+				s.logger,
+				orderitem_errors.ErrFailedDeleteOrderItem.WithInternal(err),
+				method,
+				span,
+				zap.Error(err),
+			)
 		}
 	}
 
-	success, err := s.orderCommandRepository.DeleteOrderPermanent(ctx, order_id)
-
+	success, err := s.orderCommandRepository.DeleteOrderPermanent(ctx, orderID)
 	if err != nil {
-		return s.errorhandler.HandleDeleteOrderError(err, method, "FAILED_DELETE_ORDER_PERMANENT", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			order_errors.ErrFailedDeleteOrderPermanent.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	logSuccess("Successfully deleted order permanently", zap.Int("order.id", order_id))
-
+	logSuccess("Successfully deleted order permanently", zap.Int("order.id", orderID))
 	return success, nil
 }
 
-func (s *orderCommandService) RestoreAllOrder(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *orderCommandService) RestoreAllOrder(ctx context.Context) (bool, error) {
 	const method = "RestoreAllOrder"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 	defer func() {
 		end(status)
 	}()
 
 	successItems, err := s.orderItemCommandRepository.RestoreAllOrderItem(ctx)
-
 	if err != nil || !successItems {
-		return errorhandler.HandleRepositorySingleError[bool](s.logger, err, method, "FAILED_RESTORE_ALL_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedRestoreAllOrderItem, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			orderitem_errors.ErrFailedRestoreAllOrderItem.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	success, err := s.orderCommandRepository.RestoreAllOrder(ctx)
 	if err != nil || !success {
-		return errorhandler.HandleRepositorySingleError[bool](s.logger, err, method, "FAILED_RESTORE_ALL_ORDER", span, &status, order_errors.ErrFailedRestoreAllOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			order_errors.ErrFailedRestoreAllOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	logSuccess("Successfully restored all orders", zap.Bool("success", success))
-
 	return success, nil
 }
 
-func (s *orderCommandService) DeleteAllOrderPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *orderCommandService) DeleteAllOrderPermanent(ctx context.Context) (bool, error) {
 	const method = "DeleteAllOrderPermanent"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 	defer func() {
 		end(status)
 	}()
 
-	successItems, err := s.orderCommandRepository.DeleteAllOrderPermanent(ctx)
-
+	successItems, err := s.orderItemCommandRepository.DeleteAllOrderPermanent(ctx)
 	if err != nil || !successItems {
-		return errorhandler.HandleRepositorySingleError[bool](s.logger, err, method, "FAILED_DELETE_ALL_ORDER_ITEM_PERMANENT", span, &status, orderitem_errors.ErrFailedDeleteAllOrderItem, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			orderitem_errors.ErrFailedDeleteAllOrderItem.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	success, err := s.orderCommandRepository.DeleteAllOrderPermanent(ctx)
-
 	if err != nil || !success {
-		return s.errorhandler.HandleDeleteAllOrderError(err, method, "FAILED_DELETE_ALL_ORDER_PERMANENT", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			order_errors.ErrFailedDeleteAllOrderPermanent.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	logSuccess("Successfully deleted all orders permanently", zap.Bool("success", success))
-
 	return success, nil
-}
-
-func (s *orderCommandService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
-	context.Context,
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	ctx, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Debug("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	return ctx, span, end, status, logSuccess
-}
-
-func (s *orderCommandService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
 }

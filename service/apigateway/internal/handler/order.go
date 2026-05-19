@@ -1,33 +1,28 @@
 package handler
 
 import (
-	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
+	gateway_cache "github.com/MamangRust/monolith-point-of-sale-apigateway/internal/redis/api/gateway_cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/order_errors"
+	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
 	response_api "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/api"
 	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 	"github.com/labstack/echo/v4"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	otelcode "go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 type orderHandleApi struct {
-	client          pb.OrderServiceClient
-	logger          logger.LoggerInterface
-	mapping         response_api.OrderResponseMapper
-	trace           trace.Tracer
-	requestCounter  *prometheus.CounterVec
-	requestDuration *prometheus.HistogramVec
+	client     pb.OrderServiceClient
+	logger     logger.LoggerInterface
+	mapping    response_api.OrderResponseMapper
+	apiHandler errors.ApiHandler
+	cache      *gateway_cache.GatewayCache
 }
 
 func NewHandlerOrder(
@@ -35,99 +30,57 @@ func NewHandlerOrder(
 	client pb.OrderServiceClient,
 	logger logger.LoggerInterface,
 	mapping response_api.OrderResponseMapper,
+	apiHandler errors.ApiHandler,
+	cache *gateway_cache.GatewayCache,
 ) *orderHandleApi {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "order_handler_requests_total",
-			Help: "Total number of order requests",
-		},
-		[]string{"method", "status"},
-	)
-
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "order_handler_request_duration_seconds",
-			Help:    "Duration of user requests",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method", "status"},
-	)
-
-	prometheus.MustRegister(requestCounter)
-
 	orderHandler := &orderHandleApi{
-		client:          client,
-		logger:          logger,
-		mapping:         mapping,
-		trace:           otel.Tracer("order-handler"),
-		requestCounter:  requestCounter,
-		requestDuration: requestDuration,
+		client:     client,
+		logger:     logger,
+		mapping:    mapping,
+		apiHandler: apiHandler,
+		cache:      cache,
 	}
 
 	routerOrder := router.Group("/api/order")
 
-	routerOrder.GET("", orderHandler.FindAllOrders)
-	routerOrder.GET("/:id", orderHandler.FindById)
-	routerOrder.GET("/active", orderHandler.FindByActive)
-	routerOrder.GET("/trashed", orderHandler.FindByTrashed)
+	routerOrder.GET("", apiHandler.Handle("get-order-findallorders", orderHandler.FindAllOrders))
+	routerOrder.GET("/:id", apiHandler.Handle("get-order-findbyid", orderHandler.FindById))
+	routerOrder.GET("/active", apiHandler.Handle("get-order-findbyactive", orderHandler.FindByActive))
+	routerOrder.GET("/trashed", apiHandler.Handle("get-order-findbytrashed", orderHandler.FindByTrashed))
 
-	routerOrder.GET("/monthly-total-revenue", orderHandler.FindMonthlyTotalRevenue)
-	routerOrder.GET("/yearly-total-revenue", orderHandler.FindYearlyTotalRevenue)
-	routerOrder.GET("/merchant/monthly-total-revenue", orderHandler.FindMonthlyTotalRevenueByMerchant)
-	routerOrder.GET("/merchant/yearly-total-revenue", orderHandler.FindYearlyTotalRevenueByMerchant)
+	routerOrder.GET("/monthly-total-revenue", apiHandler.Handle("get-order-findmonthlytotalrevenue", orderHandler.FindMonthlyTotalRevenue))
+	routerOrder.GET("/yearly-total-revenue", apiHandler.Handle("get-order-findyearlytotalrevenue", orderHandler.FindYearlyTotalRevenue))
+	routerOrder.GET("/merchant/monthly-total-revenue", apiHandler.Handle("get-order-findmonthlytotalrevenuebymerchant", orderHandler.FindMonthlyTotalRevenueByMerchant))
+	routerOrder.GET("/merchant/yearly-total-revenue", apiHandler.Handle("get-order-findyearlytotalrevenuebymerchant", orderHandler.FindYearlyTotalRevenueByMerchant))
 
-	routerOrder.GET("/monthly-revenue", orderHandler.FindMonthlyRevenue)
-	routerOrder.GET("/yearly-revenue", orderHandler.FindYearlyRevenue)
-	routerOrder.GET("/merchant/monthly-revenue", orderHandler.FindMonthlyRevenueByMerchant)
-	routerOrder.GET("/merchant/yearly-revenue", orderHandler.FindYearlyRevenueByMerchant)
+	routerOrder.GET("/monthly-revenue", apiHandler.Handle("get-order-findmonthlyrevenue", orderHandler.FindMonthlyRevenue))
+	routerOrder.GET("/yearly-revenue", apiHandler.Handle("get-order-findyearlyrevenue", orderHandler.FindYearlyRevenue))
+	routerOrder.GET("/merchant/monthly-revenue", apiHandler.Handle("get-order-findmonthlyrevenuebymerchant", orderHandler.FindMonthlyRevenueByMerchant))
+	routerOrder.GET("/merchant/yearly-revenue", apiHandler.Handle("get-order-findyearlyrevenuebymerchant", orderHandler.FindYearlyRevenueByMerchant))
 
-	routerOrder.POST("/create", orderHandler.Create)
-	routerOrder.POST("/update/:id", orderHandler.Update)
+	routerOrder.POST("/create", apiHandler.Handle("post-order-create", orderHandler.Create))
+	routerOrder.POST("/update/:id", apiHandler.Handle("post-order-update", orderHandler.Update))
 
-	routerOrder.POST("/trashed/:id", orderHandler.TrashedOrder)
-	routerOrder.POST("/restore/:id", orderHandler.RestoreOrder)
-	routerOrder.DELETE("/permanent/:id", orderHandler.DeleteOrderPermanent)
+	routerOrder.POST("/trashed/:id", apiHandler.Handle("post-order-trashedorder", orderHandler.TrashedOrder))
+	routerOrder.POST("/restore/:id", apiHandler.Handle("post-order-restoreorder", orderHandler.RestoreOrder))
+	routerOrder.DELETE("/permanent/:id", apiHandler.Handle("delete-order-deleteorderpermanent", orderHandler.DeleteOrderPermanent))
 
-	routerOrder.POST("/restore/all", orderHandler.RestoreAllOrder)
-	routerOrder.POST("/permanent/all", orderHandler.DeleteAllOrderPermanent)
+	routerOrder.POST("/restore/all", apiHandler.Handle("post-order-restoreallorder", orderHandler.RestoreAllOrder))
+	routerOrder.POST("/permanent/all", apiHandler.Handle("delete-order-deleteallorderpermanent", orderHandler.DeleteAllOrderPermanent))
 
 	return orderHandler
 }
 
-// @Security Bearer
-// @Summary Find all orders
-// @Tags Order
-// @Description Retrieve a list of all orders
-// @Accept json
-// @Produce json
-// @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Number of items per page" default(10)
-// @Param search query string false "Search query"
-// @Success 200 {object} response.ApiResponsePaginationOrder "List of orders"
-// @Failure 500 {object} response.ErrorResponse "Failed to retrieve order data"
-// @Router /api/order [get]
 func (h *orderHandleApi) FindAllOrders(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindAllOrders"
-	)
-
-	page := parseQueryInt(c, "page", defaultPage)
-	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
+	ctx := c.Request().Context()
+	page := parseQueryInt(c, "page", 1)
+	pageSize := parseQueryInt(c, "page_size", 10)
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(
-		ctx,
-		method,
-		attribute.Int("page", page),
-		attribute.Int("page_size", pageSize),
-		attribute.String("search", search),
-	)
-
-	defer func() { end() }()
+	cacheKey := fmt.Sprintf("order:findallorders:page_%d:size_%d:search_%s", page, pageSize, search)
+	if cached, found := gateway_cache.Get[response.ApiResponsePaginationOrder](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
+	}
 
 	req := &pb.FindAllOrderRequest{
 		Page:     int32(page),
@@ -136,46 +89,26 @@ func (h *orderHandleApi) FindAllOrders(c echo.Context) error {
 	}
 
 	res, err := h.client.FindAll(ctx, req)
-
 	if err != nil {
-		logError("Failed to retrieve order data", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindAll(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponsePaginationOrder(res)
 
-	logSuccess("Successfully retrieve order data", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// @Summary Find order by ID
-// @Tags Order
-// @Description Retrieve an order by ID
-// @Accept json
-// @Produce json
-// @Param id path int true "Order ID"
-// @Success 200 {object} response.ApiResponseOrder "Order data"
-// @Failure 400 {object} response.ErrorResponse "Invalid order ID"
-// @Failure 500 {object} response.ErrorResponse "Failed to retrieve order data"
-// @Router /api/order/{id} [get]
 func (h *orderHandleApi) FindById(c echo.Context) error {
-	const method = "FindById"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	id, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil {
-		logError("Invalid order ID", err, zap.Error(err))
+		return errors.NewBadRequestError("invalid order ID")
+	}
 
-		return order_errors.ErrApiOrderInvalidId(c)
+	cacheKey := fmt.Sprintf("order:findbyid:id_%d", id)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrder](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	req := &pb.FindByIdOrderRequest{
@@ -183,54 +116,26 @@ func (h *orderHandleApi) FindById(c echo.Context) error {
 	}
 
 	res, err := h.client.FindById(ctx, req)
-
 	if err != nil {
-		logError("Failed to retrieve order data", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindById(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrder(res)
 
-	logSuccess("Successfully retrieve order data", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// @Summary Retrieve active orders
-// @Tags Order
-// @Description Retrieve a list of active orders
-// @Accept json
-// @Produce json
-// @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Number of items per page" default(10)
-// @Param search query string false "Search query"
-// @Success 200 {object} response.ApiResponsePaginationOrderDeleteAt "List of active orders"
-// @Failure 500 {object} response.ErrorResponse "Failed to retrieve order data"
-// @Router /api/order/active [get]
 func (h *orderHandleApi) FindByActive(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByActive"
-	)
-
-	page := parseQueryInt(c, "page", defaultPage)
-	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
+	ctx := c.Request().Context()
+	page := parseQueryInt(c, "page", 1)
+	pageSize := parseQueryInt(c, "page_size", 10)
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(
-		ctx,
-		method,
-		attribute.Int("page", page),
-		attribute.Int("page_size", pageSize),
-		attribute.String("search", search),
-	)
-
-	defer func() { end() }()
+	cacheKey := fmt.Sprintf("order:findbyactive:page_%d:size_%d:search_%s", page, pageSize, search)
+	if cached, found := gateway_cache.Get[response.ApiResponsePaginationOrderDeleteAt](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
+	}
 
 	req := &pb.FindAllOrderRequest{
 		Page:     int32(page),
@@ -239,54 +144,26 @@ func (h *orderHandleApi) FindByActive(c echo.Context) error {
 	}
 
 	res, err := h.client.FindByActive(ctx, req)
-
 	if err != nil {
-		logError("Failed to retrieve order data", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindByActive(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponsePaginationOrderDeleteAt(res)
 
-	logSuccess("Successfully retrieve order data", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// @Summary Retrieve trashed orders
-// @Tags Order
-// @Description Retrieve a list of trashed orders
-// @Accept json
-// @Produce json
-// @Param page query int false "Page number" default(1)
-// @Param page_size query int false "Number of items per page" default(10)
-// @Param search query string false "Search query"
-// @Success 200 {object} response.ApiResponsePaginationOrderDeleteAt "List of trashed orders"
-// @Failure 500 {object} response.ErrorResponse "Failed to retrieve order data"
-// @Router /api/order/trashed [get]
 func (h *orderHandleApi) FindByTrashed(c echo.Context) error {
-	const (
-		defaultPage     = 1
-		defaultPageSize = 10
-		method          = "FindByTrashed"
-	)
-
-	page := parseQueryInt(c, "page", defaultPage)
-	pageSize := parseQueryInt(c, "page_size", defaultPageSize)
+	ctx := c.Request().Context()
+	page := parseQueryInt(c, "page", 1)
+	pageSize := parseQueryInt(c, "page_size", 10)
 	search := c.QueryParam("search")
 
-	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(
-		ctx,
-		method,
-		attribute.Int("page", page),
-		attribute.Int("page_size", pageSize),
-		attribute.String("search", search),
-	)
-
-	defer func() { end() }()
+	cacheKey := fmt.Sprintf("order:findbytrashed:page_%d:size_%d:search_%s", page, pageSize, search)
+	if cached, found := gateway_cache.Get[response.ApiResponsePaginationOrderDeleteAt](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
+	}
 
 	req := &pb.FindAllOrderRequest{
 		Page:     int32(page),
@@ -295,158 +172,89 @@ func (h *orderHandleApi) FindByTrashed(c echo.Context) error {
 	}
 
 	res, err := h.client.FindByTrashed(ctx, req)
-
 	if err != nil {
-		logError("Failed to retrieve order data", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindByTrashed(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponsePaginationOrderDeleteAt(res)
 
-	logSuccess("Successfully retrieve order data", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindMonthlyTotalRevenue retrieves monthly revenue statistics
-// @Summary Get monthly revenue report
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve monthly revenue statistics for all orders
-// @Accept json
-// @Produce json
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Param month query int true "Month"
-// @Success 200 {object} response.ApiResponseOrderMonthly "Monthly revenue data"
-// @Failure 400 {object} response.ErrorResponse "Invalid year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/monthly-total-revenue [get]
 func (h *orderHandleApi) FindMonthlyTotalRevenue(c echo.Context) error {
-	const method = "FindMonthlyTotalRevenue"
-
 	ctx := c.Request().Context()
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
-
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
+	}
+	month, err := parseQueryIntWithValidation(c, "month", 1, 12)
+	if err != nil {
+		return errors.NewBadRequestError("invalid month")
 	}
 
-	month, err := parseQueryIntWithValidation(c, "month", 1, 12)
-
-	if err != nil {
-		logError("Invalid month parameter", err, zap.String("month", c.QueryParam("month")))
-		return order_errors.ErrApiOrderInvalidMonth(c)
+	cacheKey := fmt.Sprintf("order:findmonthlytotalrevenue:year_%d:month_%d", year, month)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderMonthly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindMonthlyTotalRevenue(ctx, &pb.FindYearMonthTotalRevenue{
 		Year:  int32(year),
 		Month: int32(month),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve order data", err)
-		return order_errors.ErrApiOrderFailedFindMonthlyTotalRevenue(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseMonthlyTotalRevenue(res)
 
-	logSuccess("Successfully retrieved order data", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindYearlyTotalRevenue retrieves yearly revenue statistics
-// @Summary Get yearly revenue report
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve yearly revenue statistics for all orders
-// @Accept json
-// @Produce json
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Success 200 {object} response.ApiResponseOrderYearly "Yearly revenue data"
-// @Failure 400 {object} response.ErrorResponse "Invalid year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/yearly-total-revenue [get]
 func (h *orderHandleApi) FindYearlyTotalRevenue(c echo.Context) error {
-	const method = "FindYearlyTotalRevenue"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
-
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
+	}
+
+	cacheKey := fmt.Sprintf("order:findyearlytotalrevenue:year_%d", year)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderYearly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindYearlyTotalRevenue(ctx, &pb.FindYearTotalRevenue{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve order data", err)
-
-		return order_errors.ErrApiOrderFailedFindYearlyTotalRevenue(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseYearlyTotalRevenue(res)
 
-	logSuccess("Successfully retrieved order data", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindMonthlyTotalRevenueByMerchant retrieves monthly revenue statistics
-// @Summary Get monthly revenue report
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve monthly revenue statistics for all orders
-// @Accept json
-// @Produce json
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Param month query int true "Month"
-// @Success 200 {object} response.ApiResponseOrderMonthly "Monthly revenue data"
-// @Failure 400 {object} response.ErrorResponse "Invalid year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/merchant/monthly-total-revenue [get]
 func (h *orderHandleApi) FindMonthlyTotalRevenueByMerchant(c echo.Context) error {
-	const method = "FindMonthlyTotalRevenueByMerchant"
-
 	ctx := c.Request().Context()
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
 	}
-
 	month, err := parseQueryIntWithValidation(c, "month", 1, 12)
 	if err != nil {
-		logError("Invalid month parameter", err, zap.String("month", c.QueryParam("month")))
-		return order_errors.ErrApiOrderInvalidMonth(c)
+		return errors.NewBadRequestError("invalid month")
+	}
+	merchantID, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
+	if err != nil {
+		return errors.NewBadRequestError("invalid merchant_id")
 	}
 
-	merchantID, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
-
-	if err != nil {
-		logError("Invalid merchant_id parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
-		return order_errors.ErrApiOrderInvalidMerchantId(c)
+	cacheKey := fmt.Sprintf("order:findmonthlytotalrevenuebymerchant:year_%d:month_%d:merchantID_%d", year, month, merchantID)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderMonthly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindMonthlyTotalRevenueByMerchant(ctx, &pb.FindYearMonthTotalRevenueByMerchant{
@@ -454,304 +262,164 @@ func (h *orderHandleApi) FindMonthlyTotalRevenueByMerchant(c echo.Context) error
 		Month:      int32(month),
 		MerchantId: int32(merchantID),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly order revenue", err)
-		return order_errors.ErrApiOrderFailedFindMonthlyTotalRevenueByMerchant(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseMonthlyTotalRevenue(res)
 
-	logSuccess("Successfully retrieved monthly order revenue by merchant", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindYearlyTotalRevenueByMerchant retrieves yearly revenue statistics
-// @Summary Get yearly revenue report
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve yearly revenue statistics for all orders
-// @Accept json
-// @Produce json
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Success 200 {object} response.ApiResponseOrderYearly "Yearly revenue data"
-// @Failure 400 {object} response.ErrorResponse "Invalid year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/merchant/yearly-total-revenue [get]
 func (h *orderHandleApi) FindYearlyTotalRevenueByMerchant(c echo.Context) error {
-	const method = "FindYearlyTotalRevenueByMerchant"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
+	}
+	merchantID, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
+	if err != nil {
+		return errors.NewBadRequestError("invalid merchant_id")
 	}
 
-	merchant, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
-
-	if err != nil {
-		logError("Invalid merchant_id parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
-		return order_errors.ErrApiOrderInvalidMerchantId(c)
+	cacheKey := fmt.Sprintf("order:findyearlytotalrevenuebymerchant:year_%d:merchantID_%d", year, merchantID)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderYearly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindYearlyTotalRevenueByMerchant(ctx, &pb.FindYearTotalRevenueByMerchant{
 		Year:       int32(year),
-		MerchantId: int32(merchant),
+		MerchantId: int32(merchantID),
 	})
-
 	if err != nil {
-		h.logger.Debug("Failed to retrieve yearly order revenue", zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindYearlyTotalRevenueByMerchant(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseYearlyTotalRevenue(res)
 
-	logSuccess("Successfully retrieved yearly order revenue by merchant", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindMonthlyRevenue retrieves monthly revenue statistics
-// @Summary Get monthly revenue report
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve monthly revenue statistics for all orders
-// @Accept json
-// @Produce json
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Success 200 {object} response.ApiResponseOrderMonthly "Monthly revenue data"
-// @Failure 400 {object} response.ErrorResponse "Invalid year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/monthly-revenue [get]
 func (h *orderHandleApi) FindMonthlyRevenue(c echo.Context) error {
-	const method = "FindYearlyTotalRevenueByMerchant"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
+	}
+
+	cacheKey := fmt.Sprintf("order:findmonthlyrevenue:year_%d", year)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderMonthly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindMonthlyRevenue(ctx, &pb.FindYearOrder{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly order revenue", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindMonthlyRevenue(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseMonthlyOrder(res)
 
-	logSuccess("Successfully retrieved monthly order revenue", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindYearlyRevenue retrieves yearly revenue statistics
-// @Summary Get yearly revenue report
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve yearly revenue statistics for all orders
-// @Accept json
-// @Produce json
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Success 200 {object} response.ApiResponseOrderYearly "Yearly revenue data"
-// @Failure 400 {object} response.ErrorResponse "Invalid year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/yearly-revenue [get]
 func (h *orderHandleApi) FindYearlyRevenue(c echo.Context) error {
-	const method = "FindYearlyRevenue"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
-
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
+	}
+
+	cacheKey := fmt.Sprintf("order:findyearlyrevenue:year_%d", year)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderYearly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindYearlyRevenue(ctx, &pb.FindYearOrder{
 		Year: int32(year),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly order revenue", err, zap.Error(err))
-		return order_errors.ErrApiOrderFailedFindYearlyRevenue(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseYearlyOrder(res)
 
-	logSuccess("Successfully retrieved yearly order revenue", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindMonthlyRevenueByMerchant retrieves monthly revenue by merchant
-// @Summary Get monthly revenue by merchant
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve monthly revenue statistics for specific merchant
-// @Accept json
-// @Produce json
-// @Param merchant_id query int true "Merchant ID"
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Success 200 {object} response.ApiResponseOrderMonthly "Monthly revenue by merchant"
-// @Failure 400 {object} response.ErrorResponse "Invalid merchant ID or year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 404 {object} response.ErrorResponse "Merchant not found"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/merchant/monthly-revenue [get]
 func (h *orderHandleApi) FindMonthlyRevenueByMerchant(c echo.Context) error {
-	const method = "FindYearlyTotalRevenueByMerchant"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
+	}
+	merchant, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
+	if err != nil {
+		return errors.NewBadRequestError("invalid merchant_id")
 	}
 
-	merchant, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
-
-	if err != nil {
-		logError("Invalid merchant_id parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
-		return order_errors.ErrApiOrderInvalidMerchantId(c)
+	cacheKey := fmt.Sprintf("order:findmonthlyrevenuebymerchant:year_%d:merchantID_%d", year, merchant)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderMonthly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindMonthlyRevenueByMerchant(ctx, &pb.FindYearOrderByMerchant{
 		Year:       int32(year),
 		MerchantId: int32(merchant),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve monthly order revenue by merchant", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindMonthlyRevenueByMerchant(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseMonthlyOrder(res)
 
-	logSuccess("Successfully retrieved monthly order revenue by merchant", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// FindYearlyRevenueByMerchant retrieves yearly revenue by merchant
-// @Summary Get yearly revenue by merchant
-// @Tags Order
-// @Security Bearer
-// @Description Retrieve yearly revenue statistics for specific merchant
-// @Accept json
-// @Produce json
-// @Param merchant_id query int true "Merchant ID"
-// @Param year query int true "Year in YYYY format (e.g., 2023)"
-// @Success 200 {object} response.ApiResponseOrderYearly "Yearly revenue by merchant"
-// @Failure 400 {object} response.ErrorResponse "Invalid merchant ID or year parameter"
-// @Failure 401 {object} response.ErrorResponse "Unauthorized"
-// @Failure 404 {object} response.ErrorResponse "Merchant not found"
-// @Failure 500 {object} response.ErrorResponse "Internal server error"
-// @Router /api/order/merchant/yearly-revenue [get]
 func (h *orderHandleApi) FindYearlyRevenueByMerchant(c echo.Context) error {
-	const method = "FindYearlyTotalRevenueByMerchant"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	year, err := parseQueryIntWithValidation(c, "year", 1, 9999)
 	if err != nil {
-		logError("Invalid year parameter", err, zap.String("year", c.QueryParam("year")))
-		return order_errors.ErrApiOrderInvalidYear(c)
+		return errors.NewBadRequestError("invalid year")
+	}
+	merchant, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
+	if err != nil {
+		return errors.NewBadRequestError("invalid merchant_id")
 	}
 
-	merchant, err := parseQueryIntWithValidation(c, "merchant_id", 1, 9999)
-
-	if err != nil {
-		logError("Invalid merchant_id parameter", err, zap.String("merchant_id", c.QueryParam("merchant_id")))
-		return order_errors.ErrApiOrderInvalidMerchantId(c)
+	cacheKey := fmt.Sprintf("order:findyearlyrevenuebymerchant:year_%d:merchantID_%d", year, merchant)
+	if cached, found := gateway_cache.Get[response.ApiResponseOrderYearly](ctx, h.cache, cacheKey); found && cached != nil {
+		return c.JSON(http.StatusOK, cached)
 	}
 
 	res, err := h.client.FindYearlyRevenueByMerchant(ctx, &pb.FindYearOrderByMerchant{
 		Year:       int32(year),
 		MerchantId: int32(merchant),
 	})
-
 	if err != nil {
-		logError("Failed to retrieve yearly order revenue by merchant", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedFindYearlyRevenueByMerchant(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseYearlyOrder(res)
 
-	logSuccess("Successfully retrieved yearly order revenue by merchant", zap.Bool("success", true))
-
+	gateway_cache.Set(ctx, h.cache, cacheKey, so, 5*time.Minute)
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// @Summary Create a new order
-// @Tags Order
-// @Description Create a new order with provided details
-// @Accept json
-// @Produce json
-// @Param request body requests.CreateOrderRequest true "Order details"
-// @Success 200 {object} response.ApiResponseOrder "Successfully created order"
-// @Failure 400 {object} response.ErrorResponse "Invalid request body or validation error"
-// @Failure 500 {object} response.ErrorResponse "Failed to create order"
-// @Router /api/order/create [post]
 func (h *orderHandleApi) Create(c echo.Context) error {
-	const method = "Create"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	var body requests.CreateOrderRequest
-
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind request body", err, zap.Error(err))
-
-		return order_errors.ErrApiBindCreateOrder(c)
+		return errors.NewBadRequestError("bind failed")
 	}
-
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate request body", err, zap.Error(err))
-
-		return order_errors.ErrApiValidateCreateOrder(c)
+		return errors.NewBadRequestError("validation failed")
 	}
 
 	grpcReq := &pb.CreateOrderRequest{
@@ -767,67 +435,33 @@ func (h *orderHandleApi) Create(c echo.Context) error {
 	}
 
 	res, err := h.client.Create(ctx, grpcReq)
-
 	if err != nil {
-		logError("Failed to create order", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedCreate(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrder(res)
 
-	logSuccess("Successfully created order", zap.Bool("success", true))
-
+	gateway_cache.InvalidatePattern(ctx, h.cache, "order:*")
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// @Summary Update an existing order
-// @Tags Order
-// @Description Update an existing order with provided details
-// @Accept json
-// @Produce json
-// @Param id path int true "Order ID"
-// @Param request body requests.UpdateOrderRequest true "Order update details"
-// @Success 200 {object} response.ApiResponseOrder "Successfully updated order"
-// @Failure 400 {object} response.ErrorResponse "Invalid request body or validation error"
-// @Failure 500 {object} response.ErrorResponse "Failed to update order"
-// @Router /api/order/update [put]
 func (h *orderHandleApi) Update(c echo.Context) error {
-	const method = "Update"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
-	id := c.Param("id")
-
-	idInt, err := strconv.Atoi(id)
-
+	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		logError("Invalid id parameter", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderInvalidId(c)
+		return errors.NewBadRequestError("invalid order ID")
 	}
 
 	var body requests.UpdateOrderRequest
-
 	if err := c.Bind(&body); err != nil {
-		logError("Failed to bind request body", err, zap.Error(err))
-
-		return order_errors.ErrApiBindUpdateOrder(c)
+		return errors.NewBadRequestError("bind failed")
 	}
-
 	if err := body.Validate(); err != nil {
-		logError("Failed to validate request body", err, zap.Error(err))
-
-		return order_errors.ErrApiValidateUpdateOrder(c)
+		return errors.NewBadRequestError("validation failed")
 	}
 
 	grpcReq := &pb.UpdateOrderRequest{
-		OrderId: int32(idInt),
+		OrderId: int32(id),
 		Items:   []*pb.UpdateOrderItemRequest{},
 	}
 
@@ -840,47 +474,21 @@ func (h *orderHandleApi) Update(c echo.Context) error {
 	}
 
 	res, err := h.client.Update(ctx, grpcReq)
-
 	if err != nil {
-		logError("Failed to update order", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedUpdate(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrder(res)
 
-	logSuccess("Successfully updated order", zap.Bool("success", true))
-
+	gateway_cache.InvalidatePattern(ctx, h.cache, "order:*")
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// TrashedOrder retrieves a trashed order record by its ID.
-// @Summary Retrieve a trashed order
-// @Tags Order
-// @Description Retrieve a trashed order record by its ID.
-// @Accept json
-// @Produce json
-// @Param id path int true "Order ID"
-// @Success 200 {object} response.ApiResponseOrderDeleteAt "Successfully retrieved trashed order"
-// @Failure 400 {object} response.ErrorResponse "Invalid request body or validation error"
-// @Failure 500 {object} response.ErrorResponse "Failed to retrieve trashed order"
-// @Router /api/order/trashed/{id} [post]
 func (h *orderHandleApi) TrashedOrder(c echo.Context) error {
-	const method = "TrashedOrder"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	id, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil {
-		logError("Invalid id parameter", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderInvalidId(c)
+		return errors.NewBadRequestError("invalid order ID")
 	}
 
 	req := &pb.FindByIdOrderRequest{
@@ -888,47 +496,21 @@ func (h *orderHandleApi) TrashedOrder(c echo.Context) error {
 	}
 
 	res, err := h.client.TrashedOrder(ctx, req)
-
 	if err != nil {
-		logError("Failed to retrieve trashed order", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedTrashed(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrderDeleteAt(res)
 
-	logSuccess("Successfully retrieved trashed order", zap.Bool("success", true))
-
+	gateway_cache.InvalidatePattern(ctx, h.cache, "order:*")
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// RestoreOrder restores an order record from the trash by its ID.
-// @Summary Restore a trashed order
-// @Tags Order
-// @Description Restore a trashed order record by its ID.
-// @Accept json
-// @Produce json
-// @Param id path int true "Order ID"
-// @Success 200 {object} response.ApiResponseOrderDeleteAt "Successfully restored order"
-// @Failure 400 {object} response.ErrorResponse "Invalid order ID"
-// @Failure 500 {object} response.ErrorResponse "Failed to restore order"
-// @Router /api/order/restore/{id} [post]
 func (h *orderHandleApi) RestoreOrder(c echo.Context) error {
-	const method = "RestoreOrder"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	id, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil {
-		logError("Invalid id parameter", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderInvalidId(c)
+		return errors.NewBadRequestError("invalid order ID")
 	}
 
 	req := &pb.FindByIdOrderRequest{
@@ -936,47 +518,21 @@ func (h *orderHandleApi) RestoreOrder(c echo.Context) error {
 	}
 
 	res, err := h.client.RestoreOrder(ctx, req)
-
 	if err != nil {
-		logError("Failed to restore order", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedRestore(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrderDeleteAt(res)
 
-	logSuccess("Successfully restored order", zap.Bool("success", true))
-
+	gateway_cache.InvalidatePattern(ctx, h.cache, "order:*")
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// DeleteOrderPermanent permanently deletes an order record by its ID.
-// @Summary Permanently delete an order
-// @Tags Order
-// @Description Permanently delete an order record by its ID.
-// @Accept json
-// @Produce json
-// @Param id path int true "Order ID"
-// @Success 200 {object} response.ApiResponseOrderDelete "Successfully deleted order record permanently"
-// @Failure 400 {object} response.ErrorResponse "Bad Request: Invalid ID"
-// @Failure 500 {object} response.ErrorResponse "Failed to delete order:"
-// @Router /api/order/delete/{id} [delete]
 func (h *orderHandleApi) DeleteOrderPermanent(c echo.Context) error {
-	const method = "DeleteOrderPermanent"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	id, err := strconv.Atoi(c.Param("id"))
-
 	if err != nil {
-		logError("Invalid id parameter", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderInvalidId(c)
+		return errors.NewBadRequestError("invalid order ID")
 	}
 
 	req := &pb.FindByIdOrderRequest{
@@ -984,138 +540,38 @@ func (h *orderHandleApi) DeleteOrderPermanent(c echo.Context) error {
 	}
 
 	res, err := h.client.DeleteOrderPermanent(ctx, req)
-
 	if err != nil {
-		logError("Failed to delete order", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedDeletePermanent(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrderDelete(res)
 
-	logSuccess("Successfully deleted order record permanently", zap.Bool("success", true))
-
+	gateway_cache.InvalidatePattern(ctx, h.cache, "order:*")
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// RestoreAllOrder restores all trashed orders.
-// @Summary Restore all trashed orders
-// @Tags Order
-// @Description Restore all trashed order records.
-// @Accept json
-// @Produce json
-// @Success 200 {object} response.ApiResponseOrderAll "Successfully restored all orders"
-// @Failure 500 {object} response.ErrorResponse "Failed to restore orders"
-// @Router /api/order/restore/all [post]
 func (h *orderHandleApi) RestoreAllOrder(c echo.Context) error {
-	const method = "RestoreAllOrder"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	res, err := h.client.RestoreAllOrder(ctx, &emptypb.Empty{})
-
 	if err != nil {
-		logError("Failed to restore all orders", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedRestoreAll(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrderAll(res)
 
-	logSuccess("Successfully restored all orders", zap.Bool("success", true))
-
+	gateway_cache.InvalidatePattern(ctx, h.cache, "order:*")
 	return c.JSON(http.StatusOK, so)
 }
 
-// @Security Bearer
-// DeleteAllOrderPermanent permanently deletes all orders.
-// @Summary Permanently delete all orders
-// @Tags Order
-// @Description Permanently delete all order records.
-// @Accept json
-// @Produce json
-// @Success 200 {object} response.ApiResponseOrderAll "Successfully deleted all orders permanently"
-// @Failure 500 {object} response.ErrorResponse "Failed to delete orders"
-// @Router /api/order/delete/all [post]
 func (h *orderHandleApi) DeleteAllOrderPermanent(c echo.Context) error {
-	const method = "DeleteAllOrderPermanent"
-
 	ctx := c.Request().Context()
-
-	end, logSuccess, logError := h.startTracingAndLogging(ctx, method)
-
-	defer func() { end() }()
-
 	res, err := h.client.DeleteAllOrderPermanent(ctx, &emptypb.Empty{})
-
 	if err != nil {
-		logError("Failed to delete all orders", err, zap.Error(err))
-
-		return order_errors.ErrApiOrderFailedDeleteAllPermanent(c)
+		return errors.ParseGrpcError(err)
 	}
 
 	so := h.mapping.ToApiResponseOrderAll(res)
 
-	logSuccess("Successfully deleted all orders permanently", zap.Bool("success", true))
-
+	gateway_cache.InvalidatePattern(ctx, h.cache, "order:*")
 	return c.JSON(http.StatusOK, so)
-}
-
-func (s *orderHandleApi) startTracingAndLogging(
-	ctx context.Context,
-	method string,
-	attrs ...attribute.KeyValue,
-) (
-	end func(),
-	logSuccess func(string, ...zap.Field),
-	logError func(string, error, ...zap.Field),
-) {
-	start := time.Now()
-	_, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-	s.logger.Debug("Start: " + method)
-
-	status := "success"
-
-	end = func() {
-		s.recordMetrics(method, status, start)
-		code := otelcode.Ok
-		if status != "success" {
-			code = otelcode.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess = func(msg string, fields ...zap.Field) {
-		status = "success"
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	logError = func(msg string, err error, fields ...zap.Field) {
-		status = "error"
-		span.RecordError(err)
-		span.SetStatus(otelcode.Error, msg)
-		span.AddEvent(msg)
-		allFields := append([]zap.Field{zap.Error(err)}, fields...)
-		s.logger.Error(msg, allFields...)
-	}
-
-	return end, logSuccess, logError
-}
-
-func (s *orderHandleApi) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method, status).Observe(time.Since(start).Seconds())
 }

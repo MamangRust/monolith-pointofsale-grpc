@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 const (
@@ -17,94 +18,77 @@ const (
 )
 
 type orderStatsCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewOrderStatsCache(store *CacheStore) *orderStatsCache {
+func NewOrderStatsCache(store *cache.CacheStore) OrderStatsCache {
 	return &orderStatsCache{store: store}
 }
 
-func (s *orderStatsCache) GetMonthlyTotalRevenueCache(ctx context.Context, req *requests.MonthTotalRevenue) ([]*response.OrderMonthlyTotalRevenueResponse, bool) {
+func (s *orderStatsCache) GetMonthlyTotalRevenueCache(ctx context.Context, req *requests.MonthTotalRevenue) ([]*db.GetMonthlyTotalRevenueRow, bool) {
 	key := fmt.Sprintf(monthlyTotalRevenueCacheKey, req.Month, req.Year)
-
-	result, found := GetFromCache[[]*response.OrderMonthlyTotalRevenueResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyTotalRevenueRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *orderStatsCache) SetMonthlyTotalRevenueCache(ctx context.Context, req *requests.MonthTotalRevenue, data []*response.OrderMonthlyTotalRevenueResponse) {
+func (s *orderStatsCache) SetMonthlyTotalRevenueCache(ctx context.Context, req *requests.MonthTotalRevenue, data []*db.GetMonthlyTotalRevenueRow) {
 	if data == nil {
 		return
 	}
-
 	key := fmt.Sprintf(monthlyTotalRevenueCacheKey, req.Month, req.Year)
-
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }
 
-func (s *orderStatsCache) GetYearlyTotalRevenueCache(ctx context.Context, year int) ([]*response.OrderYearlyTotalRevenueResponse, bool) {
+func (s *orderStatsCache) GetYearlyTotalRevenueCache(ctx context.Context, year int) ([]*db.GetYearlyTotalRevenueRow, bool) {
 	key := fmt.Sprintf(yearlyTotalRevenueCacheKey, year)
-
-	result, found := GetFromCache[[]*response.OrderYearlyTotalRevenueResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyTotalRevenueRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *orderStatsCache) SetYearlyTotalRevenueCache(ctx context.Context, year int, data []*response.OrderYearlyTotalRevenueResponse) {
+func (s *orderStatsCache) SetYearlyTotalRevenueCache(ctx context.Context, year int, data []*db.GetYearlyTotalRevenueRow) {
 	if data == nil {
 		return
 	}
-
 	key := fmt.Sprintf(yearlyTotalRevenueCacheKey, year)
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }
 
-func (s *orderStatsCache) GetMonthlyOrderCache(ctx context.Context, year int) ([]*response.OrderMonthlyResponse, bool) {
+func (s *orderStatsCache) GetMonthlyOrderCache(ctx context.Context, year int) ([]*db.GetMonthlyOrderRow, bool) {
 	key := fmt.Sprintf(monthlyOrderCacheKey, year)
-
-	result, found := GetFromCache[[]*response.OrderMonthlyResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyOrderRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *orderStatsCache) SetMonthlyOrderCache(ctx context.Context, year int, data []*response.OrderMonthlyResponse) {
+func (s *orderStatsCache) SetMonthlyOrderCache(ctx context.Context, year int, data []*db.GetMonthlyOrderRow) {
 	if data == nil {
 		return
 	}
-
 	key := fmt.Sprintf(monthlyOrderCacheKey, year)
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }
 
-func (s *orderStatsCache) GetYearlyOrderCache(ctx context.Context, year int) ([]*response.OrderYearlyResponse, bool) {
+func (s *orderStatsCache) GetYearlyOrderCache(ctx context.Context, year int) ([]*db.GetYearlyOrderRow, bool) {
 	key := fmt.Sprintf(yearlyOrderCacheKey, year)
-
-	result, found := GetFromCache[[]*response.OrderYearlyResponse](ctx, s.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyOrderRow](ctx, s.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
-
 	return *result, true
 }
 
-func (s *orderStatsCache) SetYearlyOrderCache(ctx context.Context, year int, data []*response.OrderYearlyResponse) {
+func (s *orderStatsCache) SetYearlyOrderCache(ctx context.Context, year int, data []*db.GetYearlyOrderRow) {
 	if data == nil {
 		return
 	}
-
 	key := fmt.Sprintf(yearlyOrderCacheKey, year)
-	SetToCache(ctx, s.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, s.store, key, &data, ttlDefault)
 }

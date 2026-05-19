@@ -3,22 +3,22 @@ package mencache
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 type UserQueryCache interface {
-	GetCachedUsersCache(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponse, *int, bool)
-	SetCachedUsersCache(ctx context.Context, req *requests.FindAllUsers, data []*response.UserResponse, total *int)
+	GetCachedUsersCache(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUsersRow, *int, bool)
+	SetCachedUsersCache(ctx context.Context, req *requests.FindAllUsers, data []*db.GetUsersRow, total *int)
 
-	GetCachedUserActiveCache(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, bool)
-	SetCachedUserActiveCache(ctx context.Context, req *requests.FindAllUsers, data []*response.UserResponseDeleteAt, total *int)
+	GetCachedUserActiveCache(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUsersActiveRow, *int, bool)
+	SetCachedUserActiveCache(ctx context.Context, req *requests.FindAllUsers, data []*db.GetUsersActiveRow, total *int)
 
-	GetCachedUserTrashedCache(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, bool)
-	SetCachedUserTrashedCache(ctx context.Context, req *requests.FindAllUsers, data []*response.UserResponseDeleteAt, total *int)
+	GetCachedUserTrashedCache(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUserTrashedRow, *int, bool)
+	SetCachedUserTrashedCache(ctx context.Context, req *requests.FindAllUsers, data []*db.GetUserTrashedRow, total *int)
 
-	GetCachedUserCache(ctx context.Context, id int) (*response.UserResponse, bool)
-	SetCachedUserCache(ctx context.Context, data *response.UserResponse)
+	GetCachedUserCache(ctx context.Context, id int) (*db.User, bool)
+	SetCachedUserCache(ctx context.Context, data *db.User)
 }
 
 type UserCommandCache interface {

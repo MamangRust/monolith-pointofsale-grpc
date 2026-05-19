@@ -1,26 +1,25 @@
 package mencache
 
 import (
-	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	"github.com/redis/go-redis/v9"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 )
 
-type Mencache struct {
-	MerchantQueryCache           MerchantQueryCache
-	MerchantCommandCache         MerchantCommandCache
-	MerchantDocumentQueryCache   MerchantDocumentQueryCache
-	MerchantDocumentCommandCache MerchantDocumentCommandCache
+type Mencache interface {
+	MerchantQueryCache
+	MerchantCommandCache
+	MerchantDocumentQueryCache
+	MerchantDocumentCommandCache
 }
 
-type Deps struct {
-	Redis  *redis.Client
-	Logger logger.LoggerInterface
+type mencache struct {
+	MerchantQueryCache
+	MerchantCommandCache
+	MerchantDocumentQueryCache
+	MerchantDocumentCommandCache
 }
 
-func NewMencache(deps *Deps) *Mencache {
-	cacheStore := NewCacheStore(deps.Redis, deps.Logger)
-
-	return &Mencache{
+func NewMencache(cacheStore *cache.CacheStore) Mencache {
+	return &mencache{
 		MerchantQueryCache:           NewMerchantQueryCache(cacheStore),
 		MerchantCommandCache:         NewMerchantCommandCache(cacheStore),
 		MerchantDocumentQueryCache:   NewMerchantDocumentQueryCache(cacheStore),

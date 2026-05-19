@@ -3,11 +3,10 @@ package service
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-point-of-sale-cashier/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-point-of-sale-cashier/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-cashier/internal/repository"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 )
 
 type Service struct {
@@ -20,20 +19,45 @@ type Service struct {
 
 type Deps struct {
 	Ctx           context.Context
-	ErrorHandler  *errorhandler.ErrorHandler
-	Mencache      *mencache.Mencache
-	Repositoriees *repository.Repositories
+	Mencache      mencache.Mencache
+	Repositories  *repository.Repositories
 	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
 func NewService(deps *Deps) *Service {
-	mapper := response_service.NewCashierResponseMapper()
-
 	return &Service{
-		CashierQuery:           NewCashierQueryService(deps.ErrorHandler.CashierQueryError, deps.Mencache.CashierQueryCache, deps.Repositoriees.CashierQuery, deps.Logger, mapper),
-		CashierCommand:         NewCashierCommandService(deps.Mencache.CashierCommandCache, deps.ErrorHandler.CashierCommandError, deps.Repositoriees.MerchantQuery, deps.Repositoriees.UserQuery, deps.Repositoriees.CashierCommand, mapper, deps.Logger),
-		CashierStats:           NewCashierStatsService(deps.Mencache.CashierStatsCache, deps.ErrorHandler.CashierStatsError, deps.Repositoriees.CashierStats, deps.Logger, mapper),
-		CashierStatsById:       NewCashierStatsByIdService(deps.Mencache.CashierStatsByIdCache, deps.ErrorHandler.CashierStatsByIdError, deps.Repositoriees.CashierStatsById, deps.Logger, mapper),
-		CashierStatsByMerchant: NewCashierStatsByMerchantService(deps.Mencache.CashierStatsByMerchantCache, deps.ErrorHandler.CashierStatsByMerchantError, deps.Repositoriees.CashierStatsByMerchant, deps.Logger, mapper),
+		CashierQuery: NewCashierQueryService(&cashierQueryDeps{
+			Cache:         deps.Mencache,
+			CashierQuery:  deps.Repositories.CashierQuery,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
+		}),
+		CashierCommand: NewCashierCommandService(&cashierCommandDeps{
+			Cache:          deps.Mencache,
+			MerchantQuery:  deps.Repositories.MerchantQuery,
+			UserQuery:      deps.Repositories.UserQuery,
+			CashierCommand: deps.Repositories.CashierCommand,
+			Logger:         deps.Logger,
+			Observability:  deps.Observability,
+		}),
+		CashierStats: NewCashierStatsService(&cashierStatsDeps{
+			Cache:         deps.Mencache,
+			CashierStats:  deps.Repositories.CashierStats,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
+		}),
+		CashierStatsById: NewCashierStatsByIdService(&cashierStatsByIdDeps{
+			Cache:         deps.Mencache,
+			CashierStats:  deps.Repositories.CashierStatsById,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
+		}),
+		CashierStatsByMerchant: NewCashierStatsByMerchantService(&cashierStatsByMerchantDeps{
+			Cache:         deps.Mencache,
+			CashierStats:  deps.Repositories.CashierStatsByMerchant,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
+		}),
 	}
 }

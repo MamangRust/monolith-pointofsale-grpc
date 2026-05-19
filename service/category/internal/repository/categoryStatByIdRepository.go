@@ -2,67 +2,57 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/category_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	sharedErrors "github.com/MamangRust/monolith-point-of-sale-shared/errors"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type categoryStatsByIdRepository struct {
-	db      *db.Queries
-	mapping recordmapper.CategoryRecordMapper
+	db *db.Queries
 }
 
-func NewCategoryStatsByIdRepository(db *db.Queries, mapping recordmapper.CategoryRecordMapper) *categoryStatsByIdRepository {
+func NewCategoryStatsByIdRepository(db *db.Queries) CategoryStatsByIdRepository {
 	return &categoryStatsByIdRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *categoryStatsByIdRepository) GetMonthlyTotalPriceById(ctx context.Context, req *requests.MonthTotalPriceCategory) ([]*record.CategoriesMonthlyTotalPriceRecord, error) {
+func (r *categoryStatsByIdRepository) GetMonthlyTotalPriceById(ctx context.Context, req *requests.MonthTotalPriceCategory) ([]*db.GetMonthlyTotalPriceByIdRow, error) {
 	currentMonthStart := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	currentMonthEnd := currentMonthStart.AddDate(0, 1, -1)
 	prevMonthStart := currentMonthStart.AddDate(0, -1, 0)
 	prevMonthEnd := prevMonthStart.AddDate(0, 1, -1)
 
 	res, err := r.db.GetMonthlyTotalPriceById(ctx, db.GetMonthlyTotalPriceByIdParams{
-		Extract:     currentMonthStart,
-		CreatedAt:   sql.NullTime{Time: currentMonthEnd, Valid: true},
-		CreatedAt_2: sql.NullTime{Time: prevMonthStart, Valid: true},
-		CreatedAt_3: sql.NullTime{Time: prevMonthEnd, Valid: true},
+		Extract:     pgtype.Date{Time: currentMonthStart, Valid: true},
+		CreatedAt:   pgtype.Timestamp{Time: currentMonthEnd, Valid: true},
+		CreatedAt_2: pgtype.Timestamp{Time: prevMonthStart, Valid: true},
+		CreatedAt_3: pgtype.Timestamp{Time: prevMonthEnd, Valid: true},
 		CategoryID:  int32(req.CategoryID),
 	})
-
 	if err != nil {
-		return nil, category_errors.ErrGetMonthlyTotalPriceById
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
-	so := r.mapping.ToCategoryMonthlyTotalPricesById(res)
-
-	return so, nil
+	return res, nil
 }
 
-func (r *categoryStatsByIdRepository) GetYearlyTotalPricesById(ctx context.Context, req *requests.YearTotalPriceCategory) ([]*record.CategoriesYearlyTotalPriceRecord, error) {
+func (r *categoryStatsByIdRepository) GetYearlyTotalPricesById(ctx context.Context, req *requests.YearTotalPriceCategory) ([]*db.GetYearlyTotalPriceByIdRow, error) {
 	res, err := r.db.GetYearlyTotalPriceById(ctx, db.GetYearlyTotalPriceByIdParams{
 		Column1:    int32(req.Year),
 		CategoryID: int32(req.CategoryID),
 	})
-
 	if err != nil {
-		return nil, category_errors.ErrGetYearlyTotalPricesById
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
-	so := r.mapping.ToCategoryYearlyTotalPricesById(res)
-
-	return so, nil
+	return res, nil
 }
 
-func (r *categoryStatsByIdRepository) GetMonthPriceById(ctx context.Context, req *requests.MonthPriceId) ([]*record.CategoriesMonthPriceRecord, error) {
+func (r *categoryStatsByIdRepository) GetMonthPriceById(ctx context.Context, req *requests.MonthPriceId) ([]*db.GetMonthlyCategoryByIdRow, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	res, err := r.db.GetMonthlyCategoryById(ctx, db.GetMonthlyCategoryByIdParams{
@@ -70,23 +60,22 @@ func (r *categoryStatsByIdRepository) GetMonthPriceById(ctx context.Context, req
 		CategoryID: int32(req.CategoryID),
 	})
 	if err != nil {
-		return nil, category_errors.ErrGetMonthPriceById
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
-	return r.mapping.ToCategoryMonthlyPricesById(res), nil
+	return res, nil
 }
 
-func (r *categoryStatsByIdRepository) GetYearPriceById(ctx context.Context, req *requests.YearPriceId) ([]*record.CategoriesYearPriceRecord, error) {
+func (r *categoryStatsByIdRepository) GetYearPriceById(ctx context.Context, req *requests.YearPriceId) ([]*db.GetYearlyCategoryByIdRow, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	res, err := r.db.GetYearlyCategoryById(ctx, db.GetYearlyCategoryByIdParams{
 		Column1:    yearStart,
 		CategoryID: int32(req.CategoryID),
 	})
-
 	if err != nil {
-		return nil, category_errors.ErrGetYearPriceById
+		return nil, sharedErrors.ErrInternal.WithInternal(err)
 	}
 
-	return r.mapping.ToCategoryYearlyPricesById(res), nil
+	return res, nil
 }

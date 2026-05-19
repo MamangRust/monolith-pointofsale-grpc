@@ -4,10 +4,9 @@ import (
 	"context"
 
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	"github.com/MamangRust/monolith-point-of-sale-product/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-point-of-sale-product/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-product/internal/repository"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 )
 
 type Service struct {
@@ -17,17 +16,15 @@ type Service struct {
 
 type Deps struct {
 	Ctx          context.Context
-	ErrorHandler *errorhandler.ErrorHandler
-	Mencache     *mencache.Mencache
+	Mencache     mencache.Mencache
 	Repositories *repository.Repositories
 	Logger       logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
 func NewService(deps *Deps) *Service {
-	mapper := response_service.NewProductResponseMapper()
-
 	return &Service{
-		ProductQuery:   NewProductQueryService(deps.ErrorHandler.ProductQueryError, deps.Mencache.ProductQuery, deps.Repositories.ProductQuery, mapper, deps.Logger),
-		ProductCommand: NewProductCommandService(deps.ErrorHandler.ProductCommandError, deps.Mencache.ProductCommand, deps.Repositories.CategoryQuery, deps.Repositories.MerchantQuery, deps.Repositories.ProductQuery, deps.Repositories.ProductCommand, mapper, deps.Logger),
+		ProductQuery:   NewProductQueryService(deps.Mencache, deps.Repositories.ProductQuery, deps.Logger, deps.Observability),
+		ProductCommand: NewProductCommandService(deps.Mencache, deps.Repositories.CategoryQuery, deps.Repositories.MerchantQuery, deps.Repositories.ProductQuery, deps.Repositories.ProductCommand, deps.Logger, deps.Observability),
 	}
 }

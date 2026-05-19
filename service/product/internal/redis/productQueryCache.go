@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 const (
@@ -22,55 +23,67 @@ const (
 )
 
 type productCacheResponse struct {
-	Data         []*response.ProductResponse `json:"data"`
+	Data         []*db.GetProductsRow `json:"data"`
+	TotalRecords *int                 `json:"total_records"`
+}
+
+type productCacheResponseMerchant struct {
+	Data         []*db.GetProductsByMerchantRow `json:"data"`
+	TotalRecords *int                           `json:"total_records"`
+}
+
+type productCacheResponseCategory struct {
+	Data         []*db.GetProductsByCategoryNameRow `json:"data"`
+	TotalRecords *int                               `json:"total_records"`
+}
+
+type productCacheResponseActive struct {
+	Data         []*db.GetProductsActiveRow `json:"data"`
+	TotalRecords *int                       `json:"total_records"`
+}
+
+type productCacheResponseTrashed struct {
+	Data         []*db.GetProductsTrashedRow `json:"data"`
 	TotalRecords *int                        `json:"total_records"`
 }
 
-type productCacheResponseDeleteAt struct {
-	Data         []*response.ProductResponseDeleteAt `json:"data"`
-	TotalRecords *int                                `json:"total_records"`
-}
-
 type productQueryCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewProductQueryCache(store *CacheStore) *productQueryCache {
+func NewProductQueryCache(store *cache.CacheStore) ProductQueryCache {
 	return &productQueryCache{store: store}
 }
 
-func (p *productQueryCache) GetCachedProducts(ctx context.Context, req *requests.FindAllProducts) ([]*response.ProductResponse, *int, bool) {
+func (p *productQueryCache) GetCachedProducts(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsRow, *int, bool) {
 	key := fmt.Sprintf(productAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[productCacheResponse](ctx, p.store, key)
-
+	result, found := cache.GetFromCache[productCacheResponse](ctx, p.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
 	return result.Data, result.TotalRecords, true
 }
 
-func (p *productQueryCache) SetCachedProducts(ctx context.Context, req *requests.FindAllProducts, data []*response.ProductResponse, total *int) {
+func (p *productQueryCache) SetCachedProducts(ctx context.Context, req *requests.FindAllProducts, data []*db.GetProductsRow, total *int) {
 	if total == nil {
 		zero := 0
-
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.ProductResponse{}
+		data = []*db.GetProductsRow{}
 	}
 
 	key := fmt.Sprintf(productAllCacheKey, req.Page, req.PageSize, req.Search)
 	payload := &productCacheResponse{Data: data, TotalRecords: total}
-	SetToCache(ctx, p.store, key, payload, ttlDefault)
+	cache.SetToCache(ctx, p.store, key, payload, ttlDefault)
 }
 
-func (p *productQueryCache) GetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest) ([]*response.ProductResponse, *int, bool) {
+func (p *productQueryCache) GetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest) ([]*db.GetProductsByMerchantRow, *int, bool) {
 	key := fmt.Sprintf(productMerchantCacheKey, req.MerchantID, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[productCacheResponse](ctx, p.store, key)
-
+	result, found := cache.GetFromCache[productCacheResponseMerchant](ctx, p.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -78,27 +91,25 @@ func (p *productQueryCache) GetCachedProductsByMerchant(ctx context.Context, req
 	return result.Data, result.TotalRecords, true
 }
 
-func (p *productQueryCache) SetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest, data []*response.ProductResponse, total *int) {
+func (p *productQueryCache) SetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest, data []*db.GetProductsByMerchantRow, total *int) {
 	if total == nil {
 		zero := 0
-
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.ProductResponse{}
+		data = []*db.GetProductsByMerchantRow{}
 	}
 
 	key := fmt.Sprintf(productMerchantCacheKey, req.MerchantID, req.Page, req.PageSize, req.Search)
-	payload := &productCacheResponse{Data: data, TotalRecords: total}
-	SetToCache(ctx, p.store, key, payload, ttlDefault)
+	payload := &productCacheResponseMerchant{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, p.store, key, payload, ttlDefault)
 }
 
-func (p *productQueryCache) GetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest) ([]*response.ProductResponse, *int, bool) {
+func (p *productQueryCache) GetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest) ([]*db.GetProductsByCategoryNameRow, *int, bool) {
 	key := fmt.Sprintf(productCategoryCacheKey, req.CategoryName, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[productCacheResponse](ctx, p.store, key)
-
+	result, found := cache.GetFromCache[productCacheResponseCategory](ctx, p.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -106,27 +117,25 @@ func (p *productQueryCache) GetCachedProductsByCategory(ctx context.Context, req
 	return result.Data, result.TotalRecords, true
 }
 
-func (p *productQueryCache) SetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest, data []*response.ProductResponse, total *int) {
+func (p *productQueryCache) SetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest, data []*db.GetProductsByCategoryNameRow, total *int) {
 	if total == nil {
 		zero := 0
-
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.ProductResponse{}
+		data = []*db.GetProductsByCategoryNameRow{}
 	}
 
 	key := fmt.Sprintf(productCategoryCacheKey, req.CategoryName, req.Page, req.PageSize, req.Search)
-	payload := &productCacheResponse{Data: data, TotalRecords: total}
-	SetToCache(ctx, p.store, key, payload, ttlDefault)
+	payload := &productCacheResponseCategory{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, p.store, key, payload, ttlDefault)
 }
 
-func (p *productQueryCache) GetCachedProductActive(ctx context.Context, req *requests.FindAllProducts) ([]*response.ProductResponseDeleteAt, *int, bool) {
+func (p *productQueryCache) GetCachedProductActive(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsActiveRow, *int, bool) {
 	key := fmt.Sprintf(productActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[productCacheResponseDeleteAt](ctx, p.store, key)
-
+	result, found := cache.GetFromCache[productCacheResponseActive](ctx, p.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -134,27 +143,25 @@ func (p *productQueryCache) GetCachedProductActive(ctx context.Context, req *req
 	return result.Data, result.TotalRecords, true
 }
 
-func (p *productQueryCache) SetCachedProductActive(ctx context.Context, req *requests.FindAllProducts, data []*response.ProductResponseDeleteAt, total *int) {
+func (p *productQueryCache) SetCachedProductActive(ctx context.Context, req *requests.FindAllProducts, data []*db.GetProductsActiveRow, total *int) {
 	if total == nil {
 		zero := 0
-
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.ProductResponseDeleteAt{}
+		data = []*db.GetProductsActiveRow{}
 	}
 
 	key := fmt.Sprintf(productActiveCacheKey, req.Page, req.PageSize, req.Search)
-	payload := &productCacheResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(ctx, p.store, key, payload, ttlDefault)
+	payload := &productCacheResponseActive{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, p.store, key, payload, ttlDefault)
 }
 
-func (p *productQueryCache) GetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts) ([]*response.ProductResponseDeleteAt, *int, bool) {
+func (p *productQueryCache) GetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsTrashedRow, *int, bool) {
 	key := fmt.Sprintf(productTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[productCacheResponseDeleteAt](ctx, p.store, key)
-
+	result, found := cache.GetFromCache[productCacheResponseTrashed](ctx, p.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -162,39 +169,37 @@ func (p *productQueryCache) GetCachedProductTrashed(ctx context.Context, req *re
 	return result.Data, result.TotalRecords, true
 }
 
-func (p *productQueryCache) SetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts, data []*response.ProductResponseDeleteAt, total *int) {
+func (p *productQueryCache) SetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts, data []*db.GetProductsTrashedRow, total *int) {
 	if total == nil {
 		zero := 0
-
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.ProductResponseDeleteAt{}
+		data = []*db.GetProductsTrashedRow{}
 	}
 
 	key := fmt.Sprintf(productTrashedCacheKey, req.Page, req.PageSize, req.Search)
-	payload := &productCacheResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(ctx, p.store, key, payload, ttlDefault)
+	payload := &productCacheResponseTrashed{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, p.store, key, payload, ttlDefault)
 }
 
-func (p *productQueryCache) GetCachedProduct(ctx context.Context, productID int) (*response.ProductResponse, bool) {
+func (p *productQueryCache) GetCachedProduct(ctx context.Context, productID int) (*db.Product, bool) {
 	key := fmt.Sprintf(productByIdCacheKey, productID)
 
-	result, found := GetFromCache[*response.ProductResponse](ctx, p.store, key)
-
+	result, found := cache.GetFromCache[db.Product](ctx, p.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
 
-	return *result, true
+	return result, true
 }
 
-func (p *productQueryCache) SetCachedProduct(ctx context.Context, data *response.ProductResponse) {
+func (p *productQueryCache) SetCachedProduct(ctx context.Context, data *db.Product) {
 	if data == nil {
 		return
 	}
 
-	key := fmt.Sprintf(productByIdCacheKey, data.ID)
-	SetToCache(ctx, p.store, key, data, ttlDefault)
+	key := fmt.Sprintf(productByIdCacheKey, data.ProductID)
+	cache.SetToCache(ctx, p.store, key, data, ttlDefault)
 }

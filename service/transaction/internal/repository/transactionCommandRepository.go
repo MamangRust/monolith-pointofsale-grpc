@@ -4,25 +4,21 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/transaction_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
 )
 
 type transactionCommandRepository struct {
-	db      *db.Queries
-	mapping recordmapper.TransactionRecordMapping
+	db *db.Queries
 }
 
-func NewTransactionCommandRepository(db *db.Queries, mapping recordmapper.TransactionRecordMapping) *transactionCommandRepository {
+func NewTransactionCommandRepository(db *db.Queries) *transactionCommandRepository {
 	return &transactionCommandRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *transactionCommandRepository) CreateTransaction(ctx context.Context, request *requests.CreateTransactionRequest) (*record.TransactionRecord, error) {
+func (r *transactionCommandRepository) CreateTransaction(ctx context.Context, request *requests.CreateTransactionRequest) (*db.Transaction, error) {
 	req := db.CreateTransactionParams{
 		OrderID:       int32(request.OrderID),
 		MerchantID:    int32(request.MerchantID),
@@ -32,15 +28,14 @@ func (r *transactionCommandRepository) CreateTransaction(ctx context.Context, re
 	}
 
 	transaction, err := r.db.CreateTransaction(ctx, req)
-
 	if err != nil {
 		return nil, transaction_errors.ErrCreateTransaction
 	}
 
-	return r.mapping.ToTransactionRecord(transaction), nil
+	return transaction, nil
 }
 
-func (r *transactionCommandRepository) UpdateTransaction(ctx context.Context, request *requests.UpdateTransactionRequest) (*record.TransactionRecord, error) {
+func (r *transactionCommandRepository) UpdateTransaction(ctx context.Context, request *requests.UpdateTransactionRequest) (*db.Transaction, error) {
 	req := db.UpdateTransactionParams{
 		TransactionID: int32(*request.TransactionID),
 		MerchantID:    int32(request.MerchantID),
@@ -51,37 +46,33 @@ func (r *transactionCommandRepository) UpdateTransaction(ctx context.Context, re
 	}
 
 	res, err := r.db.UpdateTransaction(ctx, req)
-
 	if err != nil {
 		return nil, transaction_errors.ErrUpdateTransaction
 	}
 
-	return r.mapping.ToTransactionRecord(res), nil
+	return res, nil
 }
 
-func (r *transactionCommandRepository) TrashTransaction(ctx context.Context, transaction_id int) (*record.TransactionRecord, error) {
+func (r *transactionCommandRepository) TrashTransaction(ctx context.Context, transaction_id int) (*db.Transaction, error) {
 	res, err := r.db.TrashTransaction(ctx, int32(transaction_id))
-
 	if err != nil {
 		return nil, transaction_errors.ErrTrashTransaction
 	}
 
-	return r.mapping.ToTransactionRecord(res), nil
+	return res, nil
 }
 
-func (r *transactionCommandRepository) RestoreTransaction(ctx context.Context, transaction_id int) (*record.TransactionRecord, error) {
+func (r *transactionCommandRepository) RestoreTransaction(ctx context.Context, transaction_id int) (*db.Transaction, error) {
 	res, err := r.db.RestoreTransaction(ctx, int32(transaction_id))
-
 	if err != nil {
 		return nil, transaction_errors.ErrRestoreTransaction
 	}
 
-	return r.mapping.ToTransactionRecord(res), nil
+	return res, nil
 }
 
 func (r *transactionCommandRepository) DeleteTransactionPermanently(ctx context.Context, transaction_id int) (bool, error) {
 	err := r.db.DeleteTransactionPermanently(ctx, int32(transaction_id))
-
 	if err != nil {
 		return false, transaction_errors.ErrDeleteTransactionPermanently
 	}
@@ -91,7 +82,6 @@ func (r *transactionCommandRepository) DeleteTransactionPermanently(ctx context.
 
 func (r *transactionCommandRepository) RestoreAllTransactions(ctx context.Context) (bool, error) {
 	err := r.db.RestoreAllTransactions(ctx)
-
 	if err != nil {
 		return false, transaction_errors.ErrRestoreAllTransactions
 	}
@@ -100,7 +90,6 @@ func (r *transactionCommandRepository) RestoreAllTransactions(ctx context.Contex
 
 func (r *transactionCommandRepository) DeleteAllTransactionPermanent(ctx context.Context) (bool, error) {
 	err := r.db.DeleteAllPermanentTransactions(ctx)
-
 	if err != nil {
 		return false, transaction_errors.ErrDeleteAllTransactionPermanent
 	}

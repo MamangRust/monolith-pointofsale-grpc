@@ -5,25 +5,21 @@ import (
 	"time"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/transaction_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
 )
 
 type transactionStatsByMerchantRepository struct {
-	db      *db.Queries
-	mapping recordmapper.TransactionRecordMapping
+	db *db.Queries
 }
 
-func NewTransactionStatsByMerchantRepository(db *db.Queries, mapping recordmapper.TransactionRecordMapping) *transactionStatsByMerchantRepository {
+func NewTransactionStatsByMerchantRepository(db *db.Queries) *transactionStatsByMerchantRepository {
 	return &transactionStatsByMerchantRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *transactionStatsByMerchantRepository) GetMonthlyAmountSuccessByMerchant(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*record.TransactionMonthlyAmountSuccessRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetMonthlyAmountSuccessByMerchant(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*db.GetMonthlyAmountTransactionSuccessByMerchantRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	prevDate := currentDate.AddDate(0, -1, 0)
 
@@ -37,28 +33,26 @@ func (r *transactionStatsByMerchantRepository) GetMonthlyAmountSuccessByMerchant
 		Column4:    lastDayPrevMonth,
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetMonthlyAmountSuccessByMerchant
 	}
 
-	return r.mapping.ToTransactionMonthlyAmountSuccessByMerchant(res), nil
+	return res, nil
 }
 
-func (r *transactionStatsByMerchantRepository) GetYearlyAmountSuccessByMerchant(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*record.TransactionYearlyAmountSuccessRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetYearlyAmountSuccessByMerchant(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*db.GetYearlyAmountTransactionSuccessByMerchantRow, error) {
 	res, err := r.db.GetYearlyAmountTransactionSuccessByMerchant(ctx, db.GetYearlyAmountTransactionSuccessByMerchantParams{
 		Column1:    int32(req.Year),
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetYearlyAmountSuccessByMerchant
 	}
 
-	return r.mapping.ToTransactionYearlyAmountSuccessByMerchant(res), nil
+	return res, nil
 }
 
-func (r *transactionStatsByMerchantRepository) GetMonthlyAmountFailedByMerchant(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*record.TransactionMonthlyAmountFailedRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetMonthlyAmountFailedByMerchant(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*db.GetMonthlyAmountTransactionFailedByMerchantRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	prevDate := currentDate.AddDate(0, -1, 0)
 
@@ -72,28 +66,26 @@ func (r *transactionStatsByMerchantRepository) GetMonthlyAmountFailedByMerchant(
 		Column4:    lastDayPrevMonth,
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetMonthlyAmountFailedByMerchant
 	}
 
-	return r.mapping.ToTransactionMonthlyAmountFailedByMerchant(res), nil
+	return res, nil
 }
 
-func (r *transactionStatsByMerchantRepository) GetYearlyAmountFailedByMerchant(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*record.TransactionYearlyAmountFailedRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetYearlyAmountFailedByMerchant(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*db.GetYearlyAmountTransactionFailedByMerchantRow, error) {
 	res, err := r.db.GetYearlyAmountTransactionFailedByMerchant(ctx, db.GetYearlyAmountTransactionFailedByMerchantParams{
 		Column1:    int32(req.Year),
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetYearlyAmountFailedByMerchant
 	}
 
-	return r.mapping.ToTransactionYearlyAmountFailedByMerchant(res), nil
+	return res, nil
 }
 
-func (r *transactionStatsByMerchantRepository) GetMonthlyTransactionMethodByMerchantSuccess(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*record.TransactionMonthlyMethodRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetMonthlyTransactionMethodByMerchantSuccess(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*db.GetMonthlyTransactionMethodsByMerchantSuccessRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	prevDate := currentDate.AddDate(0, -1, 0)
 
@@ -107,30 +99,28 @@ func (r *transactionStatsByMerchantRepository) GetMonthlyTransactionMethodByMerc
 		Column4:    lastDayPrevMonth,
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetMonthlyTransactionMethodByMerchant
 	}
 
-	return r.mapping.ToTransactionMonthlyByMerchantMethodSuccess(res), nil
+	return res, nil
 }
 
-func (r *transactionStatsByMerchantRepository) GetYearlyTransactionMethodByMerchantSuccess(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*record.TransactionYearlyMethodRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetYearlyTransactionMethodByMerchantSuccess(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*db.GetYearlyTransactionMethodsByMerchantSuccessRow, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	res, err := r.db.GetYearlyTransactionMethodsByMerchantSuccess(ctx, db.GetYearlyTransactionMethodsByMerchantSuccessParams{
 		Column1:    yearStart,
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetYearlyTransactionMethodByMerchant
 	}
 
-	return r.mapping.ToTransactionYearlyMethodByMerchantSuccess(res), nil
+	return res, nil
 }
 
-func (r *transactionStatsByMerchantRepository) GetMonthlyTransactionMethodByMerchantFailed(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*record.TransactionMonthlyMethodRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetMonthlyTransactionMethodByMerchantFailed(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*db.GetMonthlyTransactionMethodsByMerchantFailedRow, error) {
 	currentDate := time.Date(req.Year, time.Month(req.Month), 1, 0, 0, 0, 0, time.UTC)
 	prevDate := currentDate.AddDate(0, -1, 0)
 
@@ -144,25 +134,23 @@ func (r *transactionStatsByMerchantRepository) GetMonthlyTransactionMethodByMerc
 		Column4:    lastDayPrevMonth,
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetMonthlyTransactionMethodByMerchant
 	}
 
-	return r.mapping.ToTransactionMonthlyByMerchantMethodFailed(res), nil
+	return res, nil
 }
 
-func (r *transactionStatsByMerchantRepository) GetYearlyTransactionMethodByMerchantFailed(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*record.TransactionYearlyMethodRecord, error) {
+func (r *transactionStatsByMerchantRepository) GetYearlyTransactionMethodByMerchantFailed(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*db.GetYearlyTransactionMethodsByMerchantFailedRow, error) {
 	yearStart := time.Date(req.Year, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	res, err := r.db.GetYearlyTransactionMethodsByMerchantFailed(ctx, db.GetYearlyTransactionMethodsByMerchantFailedParams{
 		Column1:    yearStart,
 		MerchantID: int32(req.MerchantID),
 	})
-
 	if err != nil {
 		return nil, transaction_errors.ErrGetYearlyTransactionMethodByMerchant
 	}
 
-	return r.mapping.ToTransactionYearlyMethodByMerchantFailed(res), nil
+	return res, nil
 }

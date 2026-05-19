@@ -1,17 +1,25 @@
 package handler
 
-import "github.com/MamangRust/monolith-point-of-sale-role/internal/service"
+import (
+	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
+	"github.com/MamangRust/monolith-point-of-sale-role/internal/service"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
+)
 
 type Deps struct {
 	Service *service.Service
+	Logger  logger.LoggerInterface
 }
 
 type Handler struct {
-	Role RoleHandleGrpc
+	Role pb.RoleServiceServer
 }
 
 func NewHandler(deps *Deps) *Handler {
 	return &Handler{
-		Role: NewRoleHandleGrpc(deps.Service),
+		Role: NewRoleHandleGrpc(
+			deps.Service,
+			deps.Logger,
+		),
 	}
 }

@@ -2,7 +2,7 @@ package repository
 
 import (
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 )
 
 type Repositories struct {
@@ -15,18 +15,18 @@ type Repositories struct {
 	CashierStatsById       CashierStatByIdRepository
 }
 
-func NewRepositories(DB *db.Queries) *Repositories {
-	mapperUser := recordmapper.NewUserRecordMapper()
-	mapperMerchant := recordmapper.NewMerchantRecordMapper()
-	mapperCashier := recordmapper.NewCashierRecordMapper()
-
+func NewRepositories(
+	DB *db.Queries,
+	userClient pb.UserServiceClient,
+	merchantClient pb.MerchantServiceClient,
+) *Repositories {
 	return &Repositories{
-		UserQuery:              NewUserQueryRepository(DB, mapperUser),
-		MerchantQuery:          NewMerchantQueryRepository(DB, mapperMerchant),
-		CashierQuery:           NewCashierQueryRepository(DB, mapperCashier),
-		CashierCommand:         NewCashierCommandRepository(DB, mapperCashier),
-		CashierStats:           NewCashierStatsRepository(DB, mapperCashier),
-		CashierStatsByMerchant: NewCashierStatsByMerchantRepository(DB, mapperCashier),
-		CashierStatsById:       NewCashierStatsByIdRepository(DB, mapperCashier),
+		UserQuery:              NewUserQueryRepository(userClient),
+		MerchantQuery:          NewMerchantQueryRepository(merchantClient),
+		CashierQuery:           NewCashierQueryRepository(DB),
+		CashierCommand:         NewCashierCommandRepository(DB),
+		CashierStats:           NewCashierStatsRepository(DB),
+		CashierStatsByMerchant: NewCashierStatsByMerchantRepository(DB),
+		CashierStatsById:       NewCashierStatsByIdRepository(DB),
 	}
 }

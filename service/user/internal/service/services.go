@@ -3,8 +3,7 @@ package service
 import (
 	"github.com/MamangRust/monolith-point-of-sale-pkg/hash"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
-	"github.com/MamangRust/monolith-point-of-sale-user/internal/errorhandler"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 	mencache "github.com/MamangRust/monolith-point-of-sale-user/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-user/internal/repository"
 )
@@ -15,18 +14,29 @@ type Service struct {
 }
 
 type Deps struct {
-	ErrorHandler *errorhandler.ErrorHandler
-	Mencache     *mencache.Mencache
-	Repositories *repository.Repositories
-	Hash         hash.HashPassword
-	Logger       logger.LoggerInterface
+	Mencache      mencache.Mencache
+	Repositories  *repository.Repositories
+	Hash          hash.HashPassword
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
 func NewService(deps *Deps) *Service {
-	userMapper := response_service.NewUserResponseMapper()
-
 	return &Service{
-		UserQuery:   NewUserQueryService(deps.ErrorHandler.UserQueryError, deps.Mencache.UserQueryCache, deps.Repositories.UserQuery, deps.Logger, userMapper),
-		UserCommand: NewUserCommandService(deps.ErrorHandler.UserCommandError, deps.Mencache.UserCommandCache, deps.Repositories.UserQuery, deps.Repositories.UserCommand, deps.Repositories.Role, deps.Logger, userMapper, deps.Hash),
+		UserQuery: NewUserQueryService(&userQueryDeps{
+			Cache:         deps.Mencache,
+			UserQuery:     deps.Repositories.UserQuery,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
+		}),
+		UserCommand: NewUserCommandService(&userCommandDeps{
+			Cache:         deps.Mencache,
+			UserQuery:     deps.Repositories.UserQuery,
+			UserCommand:   deps.Repositories.UserCommand,
+			RoleQuery:     deps.Repositories.Role,
+			Logger:        deps.Logger,
+			Hashing:       deps.Hash,
+			Observability: deps.Observability,
+		}),
 	}
 }

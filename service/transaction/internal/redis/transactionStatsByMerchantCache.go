@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 const (
@@ -23,18 +24,17 @@ const (
 )
 
 type transactionStatsByMerchantCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewTransactionStatsByMerchantCache(store *CacheStore) *transactionStatsByMerchantCache {
+func NewTransactionStatsByMerchantCache(store *cache.CacheStore) TransactionStatsByMerchantCache {
 	return &transactionStatsByMerchantCache{store: store}
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedMonthAmountSuccessCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*response.TransactionMonthlyAmountSuccessResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedMonthAmountSuccessByMerchantCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*db.GetMonthlyAmountTransactionSuccessByMerchantRow, bool) {
 	key := fmt.Sprintf(transactonMonthAmountSuccessByMerchantKey, req.MerchantID, req.Month, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionMonthlyAmountSuccessResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyAmountTransactionSuccessByMerchantRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -42,21 +42,19 @@ func (t *transactionStatsByMerchantCache) GetCachedMonthAmountSuccessCached(ctx 
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedMonthAmountSuccessCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant, res []*response.TransactionMonthlyAmountSuccessResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedMonthAmountSuccessByMerchantCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant, res []*db.GetMonthlyAmountTransactionSuccessByMerchantRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonMonthAmountSuccessByMerchantKey, req.MerchantID, req.Month, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedMonthAmountFailedCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*response.TransactionMonthlyAmountFailedResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedMonthAmountFailedByMerchantCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant) ([]*db.GetMonthlyAmountTransactionFailedByMerchantRow, bool) {
 	key := fmt.Sprintf(transactonMonthAmountFailedByMerchantKey, req.MerchantID, req.Month, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionMonthlyAmountFailedResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyAmountTransactionFailedByMerchantRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -64,21 +62,19 @@ func (t *transactionStatsByMerchantCache) GetCachedMonthAmountFailedCached(ctx c
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedMonthAmountFailedCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant, res []*response.TransactionMonthlyAmountFailedResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedMonthAmountFailedByMerchantCached(ctx context.Context, req *requests.MonthAmountTransactionMerchant, res []*db.GetMonthlyAmountTransactionFailedByMerchantRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonMonthAmountFailedByMerchantKey, req.MerchantID, req.Month, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedYearAmountFailedCached(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*response.TransactionYearlyAmountFailedResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedYearAmountFailedByMerchantCached(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*db.GetYearlyAmountTransactionFailedByMerchantRow, bool) {
 	key := fmt.Sprintf(transactonYearAmountFailedByMerchantKey, req.MerchantID, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionYearlyAmountFailedResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyAmountTransactionFailedByMerchantRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -86,21 +82,19 @@ func (t *transactionStatsByMerchantCache) GetCachedYearAmountFailedCached(ctx co
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedYearAmountFailedCached(ctx context.Context, req *requests.YearAmountTransactionMerchant, res []*response.TransactionYearlyAmountFailedResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedYearAmountFailedByMerchantCached(ctx context.Context, req *requests.YearAmountTransactionMerchant, res []*db.GetYearlyAmountTransactionFailedByMerchantRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonYearAmountFailedByMerchantKey, req.MerchantID, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedYearAmountSuccessCached(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*response.TransactionYearlyAmountSuccessResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedYearAmountSuccessByMerchantCached(ctx context.Context, req *requests.YearAmountTransactionMerchant) ([]*db.GetYearlyAmountTransactionSuccessByMerchantRow, bool) {
 	key := fmt.Sprintf(transactonYearAmountSuccessByMerchantKey, req.MerchantID, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionYearlyAmountSuccessResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyAmountTransactionSuccessByMerchantRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -108,21 +102,19 @@ func (t *transactionStatsByMerchantCache) GetCachedYearAmountSuccessCached(ctx c
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedYearAmountSuccessCached(ctx context.Context, req *requests.YearAmountTransactionMerchant, res []*response.TransactionYearlyAmountSuccessResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedYearAmountSuccessByMerchantCached(ctx context.Context, req *requests.YearAmountTransactionMerchant, res []*db.GetYearlyAmountTransactionSuccessByMerchantRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonYearAmountSuccessByMerchantKey, req.MerchantID, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedMonthMethodSuccessCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*response.TransactionMonthlyMethodResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedMonthMethodSuccessByMerchantCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*db.GetMonthlyTransactionMethodsByMerchantSuccessRow, bool) {
 	key := fmt.Sprintf(transactonMonthMethodSuccessByMerchantKey, req.MerchantID, req.Month, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionMonthlyMethodResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyTransactionMethodsByMerchantSuccessRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -130,21 +122,19 @@ func (t *transactionStatsByMerchantCache) GetCachedMonthMethodSuccessCached(ctx 
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedMonthMethodSuccessCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant, res []*response.TransactionMonthlyMethodResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedMonthMethodSuccessByMerchantCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant, res []*db.GetMonthlyTransactionMethodsByMerchantSuccessRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonMonthMethodSuccessByMerchantKey, req.MerchantID, req.Month, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedYearMethodSuccessCached(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*response.TransactionYearlyMethodResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedYearMethodSuccessByMerchantCached(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*db.GetYearlyTransactionMethodsByMerchantSuccessRow, bool) {
 	key := fmt.Sprintf(transactonYearMethodSuccessByMerchantKey, req.MerchantID, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionYearlyMethodResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyTransactionMethodsByMerchantSuccessRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -152,21 +142,19 @@ func (t *transactionStatsByMerchantCache) GetCachedYearMethodSuccessCached(ctx c
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedYearMethodSuccessCached(ctx context.Context, req *requests.YearMethodTransactionMerchant, res []*response.TransactionYearlyMethodResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedYearMethodSuccessByMerchantCached(ctx context.Context, req *requests.YearMethodTransactionMerchant, res []*db.GetYearlyTransactionMethodsByMerchantSuccessRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonYearMethodSuccessByMerchantKey, req.MerchantID, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedMonthMethodFailedCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*response.TransactionMonthlyMethodResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedMonthMethodFailedByMerchantCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant) ([]*db.GetMonthlyTransactionMethodsByMerchantFailedRow, bool) {
 	key := fmt.Sprintf(transactonMonthMethodFailedByMerchantKey, req.MerchantID, req.Month, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionMonthlyMethodResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetMonthlyTransactionMethodsByMerchantFailedRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -174,33 +162,31 @@ func (t *transactionStatsByMerchantCache) GetCachedMonthMethodFailedCached(ctx c
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedMonthMethodFailedCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant, res []*response.TransactionMonthlyMethodResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedMonthMethodFailedByMerchantCached(ctx context.Context, req *requests.MonthMethodTransactionMerchant, res []*db.GetMonthlyTransactionMethodsByMerchantFailedRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonMonthMethodFailedByMerchantKey, req.MerchantID, req.Month, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }
 
-func (t *transactionStatsByMerchantCache) GetCachedYearMethodFailedCached(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*response.TransactionYearlyMethodResponse, bool) {
+func (t *transactionStatsByMerchantCache) GetCachedYearMethodFailedByMerchantCached(ctx context.Context, req *requests.YearMethodTransactionMerchant) ([]*db.GetYearlyTransactionMethodsByMerchantFailedRow, bool) {
 	key := fmt.Sprintf(transactonYearMethodFailedByMerchantKey, req.MerchantID, req.Year)
 
-	result, found := GetFromCache[[]*response.TransactionYearlyMethodResponse](ctx, t.store, key)
-
+	result, found := cache.GetFromCache[[]*db.GetYearlyTransactionMethodsByMerchantFailedRow](ctx, t.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
+
 	return *result, true
 }
 
-func (t *transactionStatsByMerchantCache) SetCachedYearMethodFailedCached(ctx context.Context, req *requests.YearMethodTransactionMerchant, res []*response.TransactionYearlyMethodResponse) {
+func (t *transactionStatsByMerchantCache) SetCachedYearMethodFailedByMerchantCached(ctx context.Context, req *requests.YearMethodTransactionMerchant, res []*db.GetYearlyTransactionMethodsByMerchantFailedRow) {
 	if res == nil {
 		return
 	}
 
 	key := fmt.Sprintf(transactonYearMethodFailedByMerchantKey, req.MerchantID, req.Year)
-
-	SetToCache(ctx, t.store, key, &res, ttlDefault)
+	cache.SetToCache(ctx, t.store, key, &res, ttlDefault)
 }

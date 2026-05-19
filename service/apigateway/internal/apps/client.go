@@ -11,13 +11,19 @@ import (
 	"time"
 
 	"github.com/MamangRust/monolith-point-of-sale-apigateway/internal/handler"
+	auth_cache "github.com/MamangRust/monolith-point-of-sale-apigateway/internal/redis/api/auth"
+	"github.com/MamangRust/monolith-point-of-sale-apigateway/internal/redis/api/gateway_cache"
 	"github.com/MamangRust/monolith-point-of-sale-apigateway/internal/middlewares"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/auth"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/dotenv"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	otel_pkg "github.com/MamangRust/monolith-point-of-sale-pkg/otel"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/upload_image"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
+	shared_errors "github.com/MamangRust/monolith-point-of-sale-shared/errors"
 	response_api "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/api"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
+	"github.com/redis/go-redis/v9"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -159,8 +165,26 @@ func RunClient() (*Client, func(), error) {
 		log.Fatal("Failed to initialize tracer provider", zap.Error(err))
 	}
 
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", viper.GetString("REDIS_HOST"), viper.GetString("REDIS_PORT")),
+		Password: viper.GetString("REDIS_PASSWORD"),
+		DB:       viper.GetInt("REDIS_DB"),
+	})
+
+	cacheMetrics, err := observability.NewCacheMetrics("apigateway")
+	if err != nil {
+		log.Fatal("Failed to initialize cache metrics", zap.Error(err))
+	}
+
+	cacheStore := cache.NewCacheStore(redisClient, log, cacheMetrics)
+	authMencache := auth_cache.NewMencache(cacheStore)
+	gatewayCache := gateway_cache.NewGatewayCache(cacheStore)
+
 	mapping := response_api.NewResponseApiMapper()
 	image_upload := upload_image.NewImageUpload()
+
+	obs := observability.NewTraceLoggerObservability(log)
+	apiHandler := shared_errors.NewApiHandler(obs, log)
 
 	depsHandler := &handler.Deps{
 		Token:              token,
@@ -169,6 +193,9 @@ func RunClient() (*Client, func(), error) {
 		Mapping:            mapping,
 		ImageUpload:        image_upload,
 		ServiceConnections: &conns,
+		ApiHandler:         apiHandler,
+		AuthCache:          authMencache,
+		GatewayCache:       gatewayCache,
 	}
 
 	handler.NewHandler(depsHandler)

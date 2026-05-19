@@ -5,10 +5,9 @@ import (
 
 	"github.com/MamangRust/monolith-point-of-sale-pkg/kafka"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
-	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-point-of-sale-transacton/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/repository"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 )
 
 type Service struct {
@@ -19,21 +18,19 @@ type Service struct {
 }
 
 type Deps struct {
-	Ctx          context.Context
-	Kafka        *kafka.Kafka
-	ErrorHandler *errorhandler.ErrorHandler
-	Mencache     *mencache.Mencache
-	Repositories *repository.Repositories
-	Logger       logger.LoggerInterface
+	Ctx           context.Context
+	Kafka         *kafka.Kafka
+	Mencache      mencache.Mencache
+	Repositories  *repository.Repositories
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
 func NewService(deps *Deps) *Service {
-	mapper := response_service.NewTransactionResponseMapper()
-
 	return &Service{
-		TransactionQuery:           NewTransactionQueryService(deps.Mencache.TransactionQueryCache, deps.ErrorHandler.TransactionQueryError, deps.Repositories.TransactionQueryRepository, mapper, deps.Logger),
-		TransactionCommand:         NewTransactionCommandService(deps.Mencache.TransactionCommandCache, deps.ErrorHandler.TransactionCommandError, deps.Repositories.CashierQuery, deps.Repositories.MerchantQuery, deps.Repositories.TransactionQueryRepository, deps.Repositories.TransactionCommandRepository, deps.Repositories.OrderQuery, deps.Repositories.OrderItemQuery, mapper, deps.Logger),
-		TransactionStats:           NewTransactionStatsService(deps.ErrorHandler.TransactionStatsError, deps.Mencache.TransactionStatsCache, deps.Repositories.TransactionStatsRepository, mapper, deps.Logger),
-		TransactionStatsByMerchant: NewTransactionStatsByMerchantService(deps.ErrorHandler.TransactonStatsByMerchantError, deps.Mencache.TransactionStatsByMerchant, deps.Repositories.TransactionStatsByMerchant, mapper, deps.Logger),
+		TransactionQuery:           NewTransactionQueryService(deps.Mencache, deps.Repositories.TransactionQueryRepository, deps.Logger, deps.Observability),
+		TransactionCommand:         NewTransactionCommandService(deps.Mencache, deps.Repositories.CashierQuery, deps.Repositories.MerchantQuery, deps.Repositories.TransactionQueryRepository, deps.Repositories.TransactionCommandRepository, deps.Repositories.OrderQuery, deps.Repositories.OrderItemQuery, deps.Logger, deps.Observability),
+		TransactionStats:           NewTransactionStatsService(deps.Mencache, deps.Repositories.TransactionStatsRepository, deps.Logger, deps.Observability),
+		TransactionStatsByMerchant: NewTransactionStatsByMerchantService(deps.Mencache, deps.Repositories.TransactionStatsByMerchant, deps.Logger, deps.Observability),
 	}
 }

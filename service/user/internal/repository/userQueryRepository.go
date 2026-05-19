@@ -2,29 +2,25 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/user_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/jackc/pgx/v5"
 )
 
 type userQueryRepository struct {
-	db      *db.Queries
-	mapping recordmapper.UserRecordMapping
+	db *db.Queries
 }
 
-func NewUserQueryRepository(db *db.Queries, mapping recordmapper.UserRecordMapping) *userQueryRepository {
+func NewUserQueryRepository(db *db.Queries) *userQueryRepository {
 	return &userQueryRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *userQueryRepository) FindAllUsers(ctx context.Context, req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
+func (r *userQueryRepository) FindAllUsers(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUsersRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetUsersParams{
@@ -34,7 +30,6 @@ func (r *userQueryRepository) FindAllUsers(ctx context.Context, req *requests.Fi
 	}
 
 	res, err := r.db.GetUsers(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, user_errors.ErrFindAllUsers
 	}
@@ -46,24 +41,22 @@ func (r *userQueryRepository) FindAllUsers(ctx context.Context, req *requests.Fi
 		totalCount = 0
 	}
 
-	return r.mapping.ToUsersRecordPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *userQueryRepository) FindById(ctx context.Context, user_id int) (*record.UserRecord, error) {
+func (r *userQueryRepository) FindById(ctx context.Context, user_id int) (*db.User, error) {
 	res, err := r.db.GetUserByID(ctx, int32(user_id))
-
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound
 		}
-
 		return nil, user_errors.ErrUserNotFound
 	}
 
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }
 
-func (r *userQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
+func (r *userQueryRepository) FindByActive(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUsersActiveRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetUsersActiveParams{
@@ -73,7 +66,6 @@ func (r *userQueryRepository) FindByActive(ctx context.Context, req *requests.Fi
 	}
 
 	res, err := r.db.GetUsersActive(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, user_errors.ErrFindActiveUsers
 	}
@@ -85,10 +77,10 @@ func (r *userQueryRepository) FindByActive(ctx context.Context, req *requests.Fi
 		totalCount = 0
 	}
 
-	return r.mapping.ToUsersRecordActivePagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *userQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllUsers) ([]*record.UserRecord, *int, error) {
+func (r *userQueryRepository) FindByTrashed(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUserTrashedRow, *int, error) {
 	offset := (req.Page - 1) * req.PageSize
 
 	reqDb := db.GetUserTrashedParams{
@@ -98,7 +90,6 @@ func (r *userQueryRepository) FindByTrashed(ctx context.Context, req *requests.F
 	}
 
 	res, err := r.db.GetUserTrashed(ctx, reqDb)
-
 	if err != nil {
 		return nil, nil, user_errors.ErrFindTrashedUsers
 	}
@@ -110,19 +101,17 @@ func (r *userQueryRepository) FindByTrashed(ctx context.Context, req *requests.F
 		totalCount = 0
 	}
 
-	return r.mapping.ToUsersRecordTrashedPagination(res), &totalCount, nil
+	return res, &totalCount, nil
 }
 
-func (r *userQueryRepository) FindByEmail(ctx context.Context, email string) (*record.UserRecord, error) {
+func (r *userQueryRepository) FindByEmail(ctx context.Context, email string) (*db.User, error) {
 	res, err := r.db.GetUserByEmail(ctx, email)
-
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, user_errors.ErrUserNotFound
 		}
-
 		return nil, user_errors.ErrUserNotFound
 	}
 
-	return r.mapping.ToUserRecord(res), nil
+	return res, nil
 }

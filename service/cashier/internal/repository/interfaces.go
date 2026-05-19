@@ -3,55 +3,55 @@ package repository
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 )
 
 type MerchantQueryRepository interface {
-	FindById(ctx context.Context, id int) (*record.MerchantRecord, error)
+	FindById(ctx context.Context, id int) (*db.Merchant, error)
 }
 
 type UserQueryRepository interface {
-	FindById(ctx context.Context, id int) (*record.UserRecord, error)
+	FindById(ctx context.Context, id int) (*db.User, error)
 }
 
 type CashierStatsRepository interface {
-	GetMonthlyTotalSales(ctx context.Context, req *requests.MonthTotalSales) ([]*record.CashierRecordMonthTotalSales, error)
-	GetYearlyTotalSales(ctx context.Context, year int) ([]*record.CashierRecordYearTotalSales, error)
+	GetMonthlyTotalSales(ctx context.Context, req *requests.MonthTotalSales) ([]*db.GetMonthlyTotalSalesCashierRow, error)
+	GetYearlyTotalSales(ctx context.Context, year int) ([]*db.GetYearlyTotalSalesCashierRow, error)
 
-	GetMonthyCashier(ctx context.Context, year int) ([]*record.CashierRecordMonthSales, error)
-	GetYearlyCashier(ctx context.Context, year int) ([]*record.CashierRecordYearSales, error)
+	GetMonthyCashier(ctx context.Context, year int) ([]*db.GetMonthlyCashierRow, error)
+	GetYearlyCashier(ctx context.Context, year int) ([]*db.GetYearlyCashierRow, error)
 }
 
 type CashierStatByIdRepository interface {
-	GetMonthlyTotalSalesById(ctx context.Context, req *requests.MonthTotalSalesCashier) ([]*record.CashierRecordMonthTotalSales, error)
-	GetYearlyTotalSalesById(ctx context.Context, req *requests.YearTotalSalesCashier) ([]*record.CashierRecordYearTotalSales, error)
+	GetMonthlyTotalSalesById(ctx context.Context, req *requests.MonthTotalSalesCashier) ([]*db.GetMonthlyTotalSalesByIdRow, error)
+	GetYearlyTotalSalesById(ctx context.Context, req *requests.YearTotalSalesCashier) ([]*db.GetYearlyTotalSalesByIdRow, error)
 
-	GetMonthlyCashierById(ctx context.Context, req *requests.MonthCashierId) ([]*record.CashierRecordMonthSales, error)
-	GetYearlyCashierById(ctx context.Context, req *requests.YearCashierId) ([]*record.CashierRecordYearSales, error)
+	GetMonthlyCashierById(ctx context.Context, req *requests.MonthCashierId) ([]*db.GetMonthlyCashierByCashierIdRow, error)
+	GetYearlyCashierById(ctx context.Context, req *requests.YearCashierId) ([]*db.GetYearlyCashierByCashierIdRow, error)
 }
 
 type CashierStatByMerchantRepository interface {
-	GetMonthlyTotalSalesByMerchant(ctx context.Context, req *requests.MonthTotalSalesMerchant) ([]*record.CashierRecordMonthTotalSales, error)
-	GetYearlyTotalSalesByMerchant(ctx context.Context, req *requests.YearTotalSalesMerchant) ([]*record.CashierRecordYearTotalSales, error)
+	GetMonthlyTotalSalesByMerchant(ctx context.Context, req *requests.MonthTotalSalesMerchant) ([]*db.GetMonthlyTotalSalesByMerchantRow, error)
+	GetYearlyTotalSalesByMerchant(ctx context.Context, req *requests.YearTotalSalesMerchant) ([]*db.GetYearlyTotalSalesByMerchantRow, error)
 
-	GetMonthlyCashierByMerchant(ctx context.Context, req *requests.MonthCashierMerchant) ([]*record.CashierRecordMonthSales, error)
-	GetYearlyCashierByMerchant(ctx context.Context, req *requests.YearCashierMerchant) ([]*record.CashierRecordYearSales, error)
+	GetMonthlyCashierByMerchant(ctx context.Context, req *requests.MonthCashierMerchant) ([]*db.GetMonthlyCashierByMerchantRow, error)
+	GetYearlyCashierByMerchant(ctx context.Context, req *requests.YearCashierMerchant) ([]*db.GetYearlyCashierByMerchantRow, error)
 }
 
 type CashierQueryRepository interface {
-	FindAllCashiers(ctx context.Context, req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error)
-	FindById(ctx context.Context, cashier_id int) (*record.CashierRecord, error)
-	FindByActive(ctx context.Context, req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error)
-	FindByTrashed(ctx context.Context, req *requests.FindAllCashiers) ([]*record.CashierRecord, *int, error)
-	FindByMerchant(ctx context.Context, req *requests.FindAllCashierMerchant) ([]*record.CashierRecord, *int, error)
+	FindAllCashiers(ctx context.Context, req *requests.FindAllCashiers) ([]*db.GetCashiersRow, *int, error)
+	FindById(ctx context.Context, cashier_id int) (*db.Cashier, error)
+	FindByActive(ctx context.Context, req *requests.FindAllCashiers) ([]*db.GetCashiersActiveRow, *int, error)
+	FindByTrashed(ctx context.Context, req *requests.FindAllCashiers) ([]*db.GetCashiersTrashedRow, *int, error)
+	FindByMerchant(ctx context.Context, req *requests.FindAllCashierMerchant) ([]*db.GetCashiersByMerchantRow, *int, error)
 }
 
 type CashierCommandRepository interface {
-	CreateCashier(ctx context.Context, request *requests.CreateCashierRequest) (*record.CashierRecord, error)
-	UpdateCashier(ctx context.Context, request *requests.UpdateCashierRequest) (*record.CashierRecord, error)
-	TrashedCashier(ctx context.Context, cashier_id int) (*record.CashierRecord, error)
-	RestoreCashier(ctx context.Context, cashier_id int) (*record.CashierRecord, error)
+	CreateCashier(ctx context.Context, request *requests.CreateCashierRequest) (*db.Cashier, error)
+	UpdateCashier(ctx context.Context, request *requests.UpdateCashierRequest) (*db.Cashier, error)
+	TrashedCashier(ctx context.Context, cashier_id int) (*db.Cashier, error)
+	RestoreCashier(ctx context.Context, cashier_id int) (*db.Cashier, error)
 	DeleteCashierPermanent(ctx context.Context, cashier_id int) (bool, error)
 	RestoreAllCashier(ctx context.Context) (bool, error)
 	DeleteAllCashierPermanent(ctx context.Context) (bool, error)

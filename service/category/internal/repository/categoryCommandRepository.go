@@ -2,38 +2,27 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/category_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
 )
 
 type categoryCommandRepository struct {
-	db      *db.Queries
-	mapping recordmapper.CategoryRecordMapper
+	db *db.Queries
 }
 
-func NewCategoryCommandRepository(db *db.Queries, mapping recordmapper.CategoryRecordMapper) *categoryCommandRepository {
+func NewCategoryCommandRepository(db *db.Queries) CategoryCommandRepository {
 	return &categoryCommandRepository{
-		db:      db,
-		mapping: mapping,
+		db: db,
 	}
 }
 
-func (r *categoryCommandRepository) CreateCategory(ctx context.Context, request *requests.CreateCategoryRequest) (*record.CategoriesRecord, error) {
+func (r *categoryCommandRepository) CreateCategory(ctx context.Context, request *requests.CreateCategoryRequest) (*db.Category, error) {
 	req := db.CreateCategoryParams{
-		Name: request.Name,
-		Description: sql.NullString{
-			String: request.Description,
-			Valid:  true,
-		},
-		SlugCategory: sql.NullString{
-			String: *request.SlugCategory,
-			Valid:  true,
-		},
+		Name:         request.Name,
+		Description:  &request.Description,
+		SlugCategory: request.SlugCategory,
 	}
 
 	category, err := r.db.CreateCategory(ctx, req)
@@ -41,55 +30,45 @@ func (r *categoryCommandRepository) CreateCategory(ctx context.Context, request 
 		return nil, category_errors.ErrCreateCategory
 	}
 
-	return r.mapping.ToCategoryRecord(category), nil
+	return category, nil
 }
 
-func (r *categoryCommandRepository) UpdateCategory(ctx context.Context, request *requests.UpdateCategoryRequest) (*record.CategoriesRecord, error) {
+func (r *categoryCommandRepository) UpdateCategory(ctx context.Context, request *requests.UpdateCategoryRequest) (*db.Category, error) {
 	req := db.UpdateCategoryParams{
-		CategoryID: int32(*request.CategoryID),
-		Name:       request.Name,
-		Description: sql.NullString{
-			String: request.Description,
-			Valid:  true,
-		},
-		SlugCategory: sql.NullString{
-			String: *request.SlugCategory,
-			Valid:  true,
-		},
+		CategoryID:   int32(*request.CategoryID),
+		Name:         request.Name,
+		Description:  &request.Description,
+		SlugCategory: request.SlugCategory,
 	}
 
 	res, err := r.db.UpdateCategory(ctx, req)
-
 	if err != nil {
 		return nil, category_errors.ErrUpdateCategory
 	}
 
-	return r.mapping.ToCategoryRecord(res), nil
+	return res, nil
 }
 
-func (r *categoryCommandRepository) TrashedCategory(ctx context.Context, category_id int) (*record.CategoriesRecord, error) {
+func (r *categoryCommandRepository) TrashedCategory(ctx context.Context, category_id int) (*db.Category, error) {
 	res, err := r.db.TrashCategory(ctx, int32(category_id))
-
 	if err != nil {
 		return nil, category_errors.ErrTrashedCategory
 	}
 
-	return r.mapping.ToCategoryRecord(res), nil
+	return res, nil
 }
 
-func (r *categoryCommandRepository) RestoreCategory(ctx context.Context, category_id int) (*record.CategoriesRecord, error) {
+func (r *categoryCommandRepository) RestoreCategory(ctx context.Context, category_id int) (*db.Category, error) {
 	res, err := r.db.RestoreCategory(ctx, int32(category_id))
-
 	if err != nil {
 		return nil, category_errors.ErrRestoreCategory
 	}
 
-	return r.mapping.ToCategoryRecord(res), nil
+	return res, nil
 }
 
 func (r *categoryCommandRepository) DeleteCategoryPermanently(ctx context.Context, category_id int) (bool, error) {
 	err := r.db.DeleteCategoryPermanently(ctx, int32(category_id))
-
 	if err != nil {
 		return false, category_errors.ErrDeleteCategoryPermanently
 	}
@@ -99,7 +78,6 @@ func (r *categoryCommandRepository) DeleteCategoryPermanently(ctx context.Contex
 
 func (r *categoryCommandRepository) RestoreAllCategories(ctx context.Context) (bool, error) {
 	err := r.db.RestoreAllCategories(ctx)
-
 	if err != nil {
 		return false, category_errors.ErrRestoreAllCategories
 	}
@@ -108,7 +86,6 @@ func (r *categoryCommandRepository) RestoreAllCategories(ctx context.Context) (b
 
 func (r *categoryCommandRepository) DeleteAllPermanentCategories(ctx context.Context) (bool, error) {
 	err := r.db.DeleteAllPermanentCategories(ctx)
-
 	if err != nil {
 		return false, category_errors.ErrDeleteAllPermanentCategories
 	}

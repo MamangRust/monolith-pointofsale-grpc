@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 const (
@@ -20,28 +21,32 @@ const (
 )
 
 type merchantCachedResponse struct {
-	Data         []*response.MerchantResponse `json:"data"`
+	Data         []*db.GetMerchantsRow `json:"data"`
+	TotalRecords *int                  `json:"total_records"`
+}
+
+type merchantCachedResponseActive struct {
+	Data         []*db.GetMerchantsActiveRow `json:"data"`
+	TotalRecords *int                        `json:"total_records"`
+}
+
+type merchantCachedResponseTrashed struct {
+	Data         []*db.GetMerchantsTrashedRow `json:"data"`
 	TotalRecords *int                         `json:"total_records"`
 }
 
-type merchantCachedResponseDeleteAt struct {
-	Data         []*response.MerchantResponseDeleteAt `json:"data"`
-	TotalRecords *int                                 `json:"total_records"`
-}
-
 type merchantQueryCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewMerchantQueryCache(store *CacheStore) *merchantQueryCache {
+func NewMerchantQueryCache(store *cache.CacheStore) MerchantQueryCache {
 	return &merchantQueryCache{store: store}
 }
 
-func (m *merchantQueryCache) GetCachedMerchants(ctx context.Context, req *requests.FindAllMerchants) ([]*response.MerchantResponse, *int, bool) {
+func (m *merchantQueryCache) GetCachedMerchants(ctx context.Context, req *requests.FindAllMerchants) ([]*db.GetMerchantsRow, *int, bool) {
 	key := fmt.Sprintf(merchantAllCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[merchantCachedResponse](ctx, m.store, key)
-
+	result, found := cache.GetFromCache[merchantCachedResponse](ctx, m.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -49,27 +54,26 @@ func (m *merchantQueryCache) GetCachedMerchants(ctx context.Context, req *reques
 	return result.Data, result.TotalRecords, true
 }
 
-func (m *merchantQueryCache) SetCachedMerchants(ctx context.Context, req *requests.FindAllMerchants, data []*response.MerchantResponse, total *int) {
+func (m *merchantQueryCache) SetCachedMerchants(ctx context.Context, req *requests.FindAllMerchants, data []*db.GetMerchantsRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
 
 	if data == nil {
-		data = []*response.MerchantResponse{}
+		data = []*db.GetMerchantsRow{}
 	}
 
 	key := fmt.Sprintf(merchantAllCacheKey, req.Page, req.PageSize, req.Search)
 
 	payload := &merchantCachedResponse{Data: data, TotalRecords: total}
-	SetToCache(ctx, m.store, key, payload, ttlDefault)
+	cache.SetToCache(ctx, m.store, key, payload, ttlDefault)
 }
 
-func (m *merchantQueryCache) GetCachedMerchantActive(ctx context.Context, req *requests.FindAllMerchants) ([]*response.MerchantResponseDeleteAt, *int, bool) {
+func (m *merchantQueryCache) GetCachedMerchantActive(ctx context.Context, req *requests.FindAllMerchants) ([]*db.GetMerchantsActiveRow, *int, bool) {
 	key := fmt.Sprintf(merchantActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[merchantCachedResponseDeleteAt](ctx, m.store, key)
-
+	result, found := cache.GetFromCache[merchantCachedResponseActive](ctx, m.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -77,23 +81,26 @@ func (m *merchantQueryCache) GetCachedMerchantActive(ctx context.Context, req *r
 	return result.Data, result.TotalRecords, true
 }
 
-func (m *merchantQueryCache) SetCachedMerchantActive(ctx context.Context, req *requests.FindAllMerchants, data []*response.MerchantResponseDeleteAt, total *int) {
+func (m *merchantQueryCache) SetCachedMerchantActive(ctx context.Context, req *requests.FindAllMerchants, data []*db.GetMerchantsActiveRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
 
+	if data == nil {
+		data = []*db.GetMerchantsActiveRow{}
+	}
+
 	key := fmt.Sprintf(merchantActiveCacheKey, req.Page, req.PageSize, req.Search)
 
-	payload := &merchantCachedResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(ctx, m.store, key, payload, ttlDefault)
+	payload := &merchantCachedResponseActive{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, m.store, key, payload, ttlDefault)
 }
 
-func (m *merchantQueryCache) GetCachedMerchantTrashed(ctx context.Context, req *requests.FindAllMerchants) ([]*response.MerchantResponseDeleteAt, *int, bool) {
+func (m *merchantQueryCache) GetCachedMerchantTrashed(ctx context.Context, req *requests.FindAllMerchants) ([]*db.GetMerchantsTrashedRow, *int, bool) {
 	key := fmt.Sprintf(merchantTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
-	result, found := GetFromCache[merchantCachedResponseDeleteAt](ctx, m.store, key)
-
+	result, found := cache.GetFromCache[merchantCachedResponseTrashed](ctx, m.store, key)
 	if !found || result == nil {
 		return nil, nil, false
 	}
@@ -101,23 +108,26 @@ func (m *merchantQueryCache) GetCachedMerchantTrashed(ctx context.Context, req *
 	return result.Data, result.TotalRecords, true
 }
 
-func (m *merchantQueryCache) SetCachedMerchantTrashed(ctx context.Context, req *requests.FindAllMerchants, data []*response.MerchantResponseDeleteAt, total *int) {
+func (m *merchantQueryCache) SetCachedMerchantTrashed(ctx context.Context, req *requests.FindAllMerchants, data []*db.GetMerchantsTrashedRow, total *int) {
 	if total == nil {
 		zero := 0
 		total = &zero
 	}
 
+	if data == nil {
+		data = []*db.GetMerchantsTrashedRow{}
+	}
+
 	key := fmt.Sprintf(merchantTrashedCacheKey, req.Page, req.PageSize, req.Search)
 
-	payload := &merchantCachedResponseDeleteAt{Data: data, TotalRecords: total}
-	SetToCache(ctx, m.store, key, payload, ttlDefault)
+	payload := &merchantCachedResponseTrashed{Data: data, TotalRecords: total}
+	cache.SetToCache(ctx, m.store, key, payload, ttlDefault)
 }
 
-func (m *merchantQueryCache) GetCachedMerchant(ctx context.Context, id int) (*response.MerchantResponse, bool) {
+func (m *merchantQueryCache) GetCachedMerchant(ctx context.Context, id int) (*db.Merchant, bool) {
 	key := fmt.Sprintf(merchantByIdCacheKey, id)
 
-	result, found := GetFromCache[*response.MerchantResponse](ctx, m.store, key)
-
+	result, found := cache.GetFromCache[*db.Merchant](ctx, m.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -125,17 +135,19 @@ func (m *merchantQueryCache) GetCachedMerchant(ctx context.Context, id int) (*re
 	return *result, true
 }
 
-func (m *merchantQueryCache) SetCachedMerchant(ctx context.Context, data *response.MerchantResponse) {
-	key := fmt.Sprintf(merchantByIdCacheKey, data.ID)
+func (m *merchantQueryCache) SetCachedMerchant(ctx context.Context, data *db.Merchant) {
+	if data == nil {
+		return
+	}
+	key := fmt.Sprintf(merchantByIdCacheKey, data.MerchantID)
 
-	SetToCache(ctx, m.store, key, data, ttlDefault)
+	cache.SetToCache(ctx, m.store, key, data, ttlDefault)
 }
 
-func (m *merchantQueryCache) GetCachedMerchantsByUserId(ctx context.Context, id int) ([]*response.MerchantResponse, bool) {
+func (m *merchantQueryCache) GetCachedMerchantsByUserId(ctx context.Context, id int) ([]*db.Merchant, bool) {
 	key := fmt.Sprintf(merchantByUserIdCacheKey, id)
 
-	result, found := GetFromCache[[]*response.MerchantResponse](ctx, m.store, key)
-
+	result, found := cache.GetFromCache[[]*db.Merchant](ctx, m.store, key)
 	if !found || result == nil {
 		return nil, false
 	}
@@ -143,12 +155,12 @@ func (m *merchantQueryCache) GetCachedMerchantsByUserId(ctx context.Context, id 
 	return *result, true
 }
 
-func (m *merchantQueryCache) SetCachedMerchantsByUserId(ctx context.Context, userId int, data []*response.MerchantResponse) {
+func (m *merchantQueryCache) SetCachedMerchantsByUserId(ctx context.Context, userId int, data []*db.Merchant) {
 	if data == nil {
 		return
 	}
 
 	key := fmt.Sprintf(merchantByUserIdCacheKey, userId)
 
-	SetToCache(ctx, m.store, key, &data, ttlDefault)
+	cache.SetToCache(ctx, m.store, key, &data, ttlDefault)
 }

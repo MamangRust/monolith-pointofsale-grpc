@@ -2,228 +2,178 @@ package service
 
 import (
 	"context"
-	"time"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
+	sharederrorhandler "github.com/MamangRust/monolith-point-of-sale-shared/errorhandler"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/user_errors"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
-	"github.com/MamangRust/monolith-point-of-sale-user/internal/errorhandler"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 	mencache "github.com/MamangRust/monolith-point-of-sale-user/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-user/internal/repository"
-	"github.com/prometheus/client_golang/prometheus"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
-type userQueryService struct {
-	errorhandler        errorhandler.UserQueryError
-	mencache            mencache.UserQueryCache
-	trace               trace.Tracer
-	userQueryRepository repository.UserQueryRepository
-	logger              logger.LoggerInterface
-	mapping             response_service.UserResponseMapper
-	requestCounter      *prometheus.CounterVec
-	requestDuration     *prometheus.HistogramVec
+type userQueryDeps struct {
+	Cache         mencache.UserQueryCache
+	UserQuery     repository.UserQueryRepository
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
-func NewUserQueryService(
-	errorhandler errorhandler.UserQueryError,
-	mencache mencache.UserQueryCache,
-	userQueryRepository repository.UserQueryRepository, logger logger.LoggerInterface, mapping response_service.UserResponseMapper) *userQueryService {
-	requestCounter := prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "user_query_service_request_total",
-			Help: "Total number of requests to the UserQueryService",
-		},
-		[]string{"method", "status"},
-	)
+type userQueryService struct {
+	mencache      mencache.UserQueryCache
+	userQuery     repository.UserQueryRepository
+	logger        logger.LoggerInterface
+	observability observability.TraceLoggerObservability
+}
 
-	requestDuration := prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "user_query_service_request_duration_seconds",
-			Help:    "Histogram of request durations for the UserQueryService",
-			Buckets: prometheus.DefBuckets,
-		},
-		[]string{"method"},
-	)
-
-	prometheus.MustRegister(requestCounter, requestDuration)
-
+func NewUserQueryService(params *userQueryDeps) UserQueryService {
 	return &userQueryService{
-		errorhandler:        errorhandler,
-		mencache:            mencache,
-		trace:               otel.Tracer("user-query-service"),
-		userQueryRepository: userQueryRepository,
-		logger:              logger,
-		mapping:             mapping,
-		requestCounter:      requestCounter,
-		requestDuration:     requestDuration,
+		mencache:      params.Cache,
+		userQuery:     params.UserQuery,
+		logger:        params.Logger,
+		observability: params.Observability,
 	}
 }
 
-func (s *userQueryService) FindAll(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponse, *int, *response.ErrorResponse) {
+func (s *userQueryService) FindAll(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUsersRow, *int, error) {
 	const method = "FindAll"
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", req.Search),
+	)
 	defer func() {
 		end(status)
 	}()
 
 	if data, total, found := s.mencache.GetCachedUsersCache(ctx, req); found {
-		logSuccess("Successfully fetched user records from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
-
+		logSuccess("Successfully fetched users from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	users, totalRecords, err := s.userQueryRepository.FindAllUsers(ctx, req)
+	users, totalRecords, err := s.userQuery.FindAllUsers(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationError(err, method, "FAILED_FIND_ALL_USERS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandlerErrorPagination[[]*db.GetUsersRow](
+			s.logger,
+			user_errors.ErrFailedFindAll.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	userResponses := s.mapping.ToUsersResponse(users)
-
-	s.mencache.SetCachedUsersCache(ctx, req, userResponses, totalRecords)
-
-	logSuccess("Successfully fetched all user records", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
-
-	return userResponses, totalRecords, nil
+	s.mencache.SetCachedUsersCache(ctx, req, users, totalRecords)
+	logSuccess("Successfully fetched users", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	return users, totalRecords, nil
 }
 
-func (s *userQueryService) FindByID(ctx context.Context, id int) (*response.UserResponse, *response.ErrorResponse) {
+func (s *userQueryService) FindByID(ctx context.Context, id int) (*db.User, error) {
 	const method = "FindByID"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("user.id", id))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("user.id", id),
+	)
 	defer func() {
 		end(status)
 	}()
 
-	user, err := s.userQueryRepository.FindById(ctx, id)
-
-	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_USER", span, &status, user_errors.ErrUserNotFoundRes, zap.Int("user.id", id), zap.Error(err))
+	if data, found := s.mencache.GetCachedUserCache(ctx, id); found {
+		logSuccess("Successfully fetched user from cache", zap.Int("user.id", id))
+		return data, nil
 	}
 
-	userRes := s.mapping.ToUserResponse(user)
+	user, err := s.userQuery.FindById(ctx, id)
+	if err != nil {
+		status = "error"
+		return sharederrorhandler.HandleError[*db.User](
+			s.logger,
+			user_errors.ErrUserNotFoundRes.WithInternal(err),
+			method,
+			span,
+			zap.Int("user.id", id),
+			zap.Error(err),
+		)
+	}
 
-	s.mencache.SetCachedUserCache(ctx, userRes)
-
-	logSuccess("Successfully fetched user record", zap.Int("user.id", id))
-
-	return userRes, nil
+	s.mencache.SetCachedUserCache(ctx, user)
+	logSuccess("Successfully fetched user", zap.Int("user.id", id))
+	return user, nil
 }
 
-func (s *userQueryService) FindByActive(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *userQueryService) FindByActive(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUsersActiveRow, *int, error) {
 	const method = "FindByActive"
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", req.Search),
+	)
 	defer func() {
 		end(status)
 	}()
 
 	if data, total, found := s.mencache.GetCachedUserActiveCache(ctx, req); found {
-		logSuccess("Data found in cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
+		logSuccess("Successfully fetched active users from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	users, totalRecords, err := s.userQueryRepository.FindByActive(ctx, req)
-
+	users, totalRecords, err := s.userQuery.FindByActive(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByActive", "FAILED_FIND_ACTIVE_USERS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandlerErrorPagination[[]*db.GetUsersActiveRow](
+			s.logger,
+			user_errors.ErrFailedFindActive.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToUsersResponseDeleteAt(users)
-
-	s.mencache.SetCachedUserActiveCache(ctx, req, so, totalRecords)
-
-	logSuccess("Successfully fetched active users", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return so, totalRecords, nil
+	s.mencache.SetCachedUserActiveCache(ctx, req, users, totalRecords)
+	logSuccess("Successfully fetched active users", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	return users, totalRecords, nil
 }
 
-func (s *userQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllUsers) ([]*response.UserResponseDeleteAt, *int, *response.ErrorResponse) {
+func (s *userQueryService) FindByTrashed(ctx context.Context, req *requests.FindAllUsers) ([]*db.GetUserTrashedRow, *int, error) {
 	const method = "FindByTrashed"
-
 	page, pageSize := s.normalizePagination(req.Page, req.PageSize)
-	search := req.Search
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("page", page), attribute.Int("pageSize", pageSize), attribute.String("search", search))
-
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("page", page),
+		attribute.Int("pageSize", pageSize),
+		attribute.String("search", req.Search),
+	)
 	defer func() {
 		end(status)
 	}()
 
 	if data, total, found := s.mencache.GetCachedUserTrashedCache(ctx, req); found {
-		logSuccess("Data found in cache", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
+		logSuccess("Successfully fetched trashed users from cache", zap.Int("totalRecords", *total), zap.Int("page", page), zap.Int("pageSize", pageSize))
 		return data, total, nil
 	}
 
-	users, totalRecords, err := s.userQueryRepository.FindByTrashed(ctx, req)
-
+	users, totalRecords, err := s.userQuery.FindByTrashed(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositoryPaginationDeleteAtError(err, "FindByTrashed", "FAILED_FIND_TRASHED_USERS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandlerErrorPagination[[]*db.GetUserTrashedRow](
+			s.logger,
+			user_errors.ErrFailedFindTrashed.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToUsersResponseDeleteAt(users)
-
-	s.mencache.SetCachedUserTrashedCache(ctx, req, so, totalRecords)
-
-	logSuccess("Successfully fetched trashed users", zap.Int("page", page), zap.Int("pageSize", pageSize), zap.String("search", search))
-
-	return so, totalRecords, nil
-}
-
-func (s *userQueryService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
-	context.Context,
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	ctx, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Debug("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	return ctx, span, end, status, logSuccess
+	s.mencache.SetCachedUserTrashedCache(ctx, req, users, totalRecords)
+	logSuccess("Successfully fetched trashed users", zap.Int("totalRecords", *totalRecords), zap.Int("page", page), zap.Int("pageSize", pageSize))
+	return users, totalRecords, nil
 }
 
 func (s *userQueryService) normalizePagination(page, pageSize int) (int, int) {
@@ -234,9 +184,4 @@ func (s *userQueryService) normalizePagination(page, pageSize int) (int, int) {
 		pageSize = 10
 	}
 	return page, pageSize
-}
-
-func (s *userQueryService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
 }

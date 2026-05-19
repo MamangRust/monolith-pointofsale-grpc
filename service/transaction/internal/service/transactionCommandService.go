@@ -2,31 +2,29 @@ package service
 
 import (
 	"context"
-	"time"
+	"errors"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
+	sharederrorhandler "github.com/MamangRust/monolith-point-of-sale-shared/errorhandler"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/cashier_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/merchant_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/order_errors"
 	orderitem_errors "github.com/MamangRust/monolith-point-of-sale-shared/errors/order_item_errors"
 	"github.com/MamangRust/monolith-point-of-sale-shared/errors/transaction_errors"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
-	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/errorhandler"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 	mencache "github.com/MamangRust/monolith-point-of-sale-transacton/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type transactionCommandService struct {
 	mencache                     mencache.TransactionCommandCache
-	errorhandler                 errorhandler.TransactionCommandError
 	trace                        trace.Tracer
 	cashierQueryRepository       repository.CashierQueryRepository
 	merchantQueryRepository      repository.MerchantQueryRepository
@@ -34,23 +32,22 @@ type transactionCommandService struct {
 	transactionCommandRepository repository.TransactionCommandRepository
 	orderQueryRepository         repository.OrderQueryRepository
 	orderItemQueryRepository     repository.OrderItemQueryRepository
-	mapping                      response_service.TransactionResponseMapper
 	logger                       logger.LoggerInterface
+	observability                observability.TraceLoggerObservability
 	requestCounter               *prometheus.CounterVec
 	requestDuration              *prometheus.HistogramVec
 }
 
 func NewTransactionCommandService(
 	mencache mencache.TransactionCommandCache,
-	errorhandler errorhandler.TransactionCommandError,
 	cashierQueryRepository repository.CashierQueryRepository,
 	merchantQueryRepository repository.MerchantQueryRepository,
 	transactionQueryRepository repository.TransactionQueryRepository,
 	transactionCommandRepository repository.TransactionCommandRepository,
 	orderQueryRepository repository.OrderQueryRepository,
 	orderItemQueryRepository repository.OrderItemQueryRepository,
-	mapping response_service.TransactionResponseMapper,
 	logger logger.LoggerInterface,
+	obs observability.TraceLoggerObservability,
 ) *transactionCommandService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -62,7 +59,7 @@ func NewTransactionCommandService(
 
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "transaction_command_service_request_duration",
+			Name:    "transaction_command_service_request_duration_seconds",
 			Help:    "Histogram of request durations for the TransactionCommandService",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -73,7 +70,6 @@ func NewTransactionCommandService(
 
 	return &transactionCommandService{
 		mencache:                     mencache,
-		errorhandler:                 errorhandler,
 		trace:                        otel.Tracer("transaction-command-service"),
 		cashierQueryRepository:       cashierQueryRepository,
 		merchantQueryRepository:      merchantQueryRepository,
@@ -81,17 +77,18 @@ func NewTransactionCommandService(
 		transactionCommandRepository: transactionCommandRepository,
 		orderQueryRepository:         orderQueryRepository,
 		orderItemQueryRepository:     orderItemQueryRepository,
-		mapping:                      mapping,
 		logger:                       logger,
+		observability:                obs,
 		requestCounter:               requestCounter,
 		requestDuration:              requestDuration,
 	}
 }
 
-func (s *transactionCommandService) CreateTransaction(ctx context.Context, req *requests.CreateTransactionRequest) (*response.TransactionResponse, *response.ErrorResponse) {
+func (s *transactionCommandService) CreateTransaction(ctx context.Context, req *requests.CreateTransactionRequest) (*db.Transaction, error) {
 	const method = "CreateTransaction"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("cashier.id", req.CashierID), attribute.Int("merchant.id", req.MerchantID), attribute.Int("order.id", req.OrderID))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("cashier.id", req.CashierID), attribute.Int("merchant.id", req.MerchantID), attribute.Int("order.id", req.OrderID))
 
 	defer func() {
 		end(status)
@@ -99,35 +96,79 @@ func (s *transactionCommandService) CreateTransaction(ctx context.Context, req *
 
 	cashier, err := s.cashierQueryRepository.FindById(ctx, req.CashierID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.TransactionResponse](s.logger, err, method, "FAILED_FIND_CASHIER", span, &status, cashier_errors.ErrFailedFindCashierById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			cashier_errors.ErrFailedFindCashierById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	_, err = s.merchantQueryRepository.FindById(ctx, cashier.MerchantID)
+	_, err = s.merchantQueryRepository.FindById(ctx, int(cashier.MerchantID))
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.TransactionResponse](s.logger, err, method, "FAILED_FIND_MERCHANT", span, &status, merchant_errors.ErrFailedFindMerchantById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			merchant_errors.ErrFailedFindMerchantById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
-	req.MerchantID = cashier.MerchantID
+	req.MerchantID = int(cashier.MerchantID)
 
 	_, err = s.orderQueryRepository.FindById(ctx, req.OrderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.TransactionResponse](s.logger, err, method, "FAILED_FIND_ORDER", span, &status, order_errors.ErrFailedFindOrderById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			order_errors.ErrFailedFindOrderById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	orderItems, err := s.orderItemQueryRepository.FindOrderItemByOrder(ctx, req.OrderID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.TransactionResponse](s.logger, err, method, "FAILED_FIND_ORDER_ITEMS", span, &status, orderitem_errors.ErrFailedFindOrderItemByOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			orderitem_errors.ErrFailedFindOrderItemByOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	if len(orderItems) == 0 {
-		return errorhandler.HandleCannotOrderItem[*response.TransactionResponse](s.logger, err, method, "CANNOT_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedOrderItemEmpty, zap.Error(err))
+		status = "error"
+		errEmpty := errors.New("order item is empty")
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedOrderItemEmpty.WithInternal(errEmpty),
+			method,
+			span,
+			zap.Error(errEmpty),
+		)
 	}
 
 	var totalAmount int
 	for _, item := range orderItems {
 		if item.Quantity <= 0 {
-			return errorhandler.HandleInvalidQuantityOrderItem[*response.TransactionResponse](s.logger, err, method, "INVALID_QUANTITY_ORDER_ITEM", span, &status, orderitem_errors.ErrFailedFindOrderItemByOrder, zap.Error(err))
+			status = "error"
+			errQty := errors.New("invalid quantity for order item")
+			return sharederrorhandler.HandleError[*db.Transaction](
+				s.logger,
+				transaction_errors.ErrFailedPaymentStatusInvalid.WithInternal(errQty),
+				method,
+				span,
+				zap.Error(errQty),
+			)
 		}
-		totalAmount += item.Price * item.Quantity
+		totalAmount += int(item.Price) * int(item.Quantity)
 	}
 
 	ppn := totalAmount * 11 / 100
@@ -143,7 +184,15 @@ func (s *transactionCommandService) CreateTransaction(ctx context.Context, req *
 	if req.Amount >= totalAmountWithTax {
 		paymentStatus = "success"
 	} else {
-		return s.errorhandler.HandleInsufficientBalance(err, method, "FAILED_PAYMENT_INSUFFICIENT_BALANCE", span, &status, zap.Error(err))
+		status = "error"
+		errBalance := errors.New("insufficient balance")
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedPaymentInsufficientBalance.WithInternal(errBalance),
+			method,
+			span,
+			zap.Error(errBalance),
+		)
 	}
 
 	req.Amount = totalAmountWithTax
@@ -151,18 +200,26 @@ func (s *transactionCommandService) CreateTransaction(ctx context.Context, req *
 
 	transaction, err := s.transactionCommandRepository.CreateTransaction(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_CREATE_TRANSACTION", span, &status, transaction_errors.ErrFailedCreateTransaction, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedCreateTransaction.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	logSuccess("Successfully created transaction", zap.Bool("success", true))
 
-	return s.mapping.ToTransactionResponse(transaction), nil
+	return transaction, nil
 }
 
-func (s *transactionCommandService) UpdateTransaction(ctx context.Context, req *requests.UpdateTransactionRequest) (*response.TransactionResponse, *response.ErrorResponse) {
+func (s *transactionCommandService) UpdateTransaction(ctx context.Context, req *requests.UpdateTransactionRequest) (*db.Transaction, error) {
 	const method = "UpdateTransaction"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("transaction.id", *req.TransactionID), attribute.Int("merchant.id", req.MerchantID), attribute.Int("order.id", req.OrderID))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("transaction.id", *req.TransactionID), attribute.Int("merchant.id", req.MerchantID), attribute.Int("order.id", req.OrderID))
 
 	defer func() {
 		end(status)
@@ -170,37 +227,80 @@ func (s *transactionCommandService) UpdateTransaction(ctx context.Context, req *
 
 	cashier, err := s.cashierQueryRepository.FindById(ctx, req.CashierID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.TransactionResponse](s.logger, err, method, "FAILED_FIND_CASHIER", span, &status, cashier_errors.ErrFailedFindCashierById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			cashier_errors.ErrFailedFindCashierById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	existingTx, err := s.transactionQueryRepository.FindById(ctx, *req.TransactionID)
 	if err != nil {
-		return errorhandler.HandleRepositorySingleError[*response.TransactionResponse](s.logger, err, method, "FAILED_FIND_TRANSACTION_BY_ID", span, &status, transaction_errors.ErrFailedFindTransactionById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedFindTransactionById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	if existingTx.PaymentStatus == "paid" || existingTx.PaymentStatus == "refunded" {
-		return s.errorhandler.HandleInvalidOrderItem(err, method, "FAILED_PAYMENT_STATUS_CANNOT_BE_MODIFIED", span, &status, zap.Error(err))
+		status = "error"
+		errStatus := errors.New("transaction payment status cannot be modified")
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedPaymentStatusCannotBeModified.WithInternal(errStatus),
+			method,
+			span,
+			zap.Error(errStatus),
+		)
 	}
 
-	_, err = s.merchantQueryRepository.FindById(ctx, cashier.MerchantID)
+	_, err = s.merchantQueryRepository.FindById(ctx, int(cashier.MerchantID))
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_MERCHANT", span, &status, merchant_errors.ErrFailedFindMerchantById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			merchant_errors.ErrFailedFindMerchantById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
-	req.MerchantID = cashier.MerchantID
+	req.MerchantID = int(cashier.MerchantID)
 
 	_, err = s.orderQueryRepository.FindById(ctx, req.OrderID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_ORDER", span, &status, order_errors.ErrFailedFindOrderById, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			order_errors.ErrFailedFindOrderById.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	orderItems, err := s.orderItemQueryRepository.FindOrderItemByOrder(ctx, req.OrderID)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_FIND_ORDER_ITEMS", span, &status, orderitem_errors.ErrFailedFindOrderItemByOrder, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			orderitem_errors.ErrFailedFindOrderItemByOrder.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	var totalAmount int
 	for _, item := range orderItems {
-		totalAmount += item.Price * item.Quantity
+		totalAmount += int(item.Price) * int(item.Quantity)
 	}
 
 	ppn := totalAmount * 11 / 100
@@ -210,7 +310,15 @@ func (s *transactionCommandService) UpdateTransaction(ctx context.Context, req *
 	if req.Amount >= totalAmountWithTax {
 		paymentStatus = "success"
 	} else {
-		return s.errorhandler.HandleInsufficientBalance(err, method, "FAILED_PAYMENT_INSUFFICIENT_BALANCE", span, &status, zap.Error(err))
+		status = "error"
+		errBalance := errors.New("insufficient balance")
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedPaymentInsufficientBalance.WithInternal(errBalance),
+			method,
+			span,
+			zap.Error(errBalance),
+		)
 	}
 
 	req.Amount = totalAmountWithTax
@@ -218,20 +326,27 @@ func (s *transactionCommandService) UpdateTransaction(ctx context.Context, req *
 
 	transaction, err := s.transactionCommandRepository.UpdateTransaction(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleRepositorySingleError(err, method, "FAILED_UPDATE_TRANSACTION", span, &status, transaction_errors.ErrFailedUpdateTransaction, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedUpdateTransaction.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	s.mencache.DeleteTransactionCache(ctx, *req.TransactionID)
 
 	logSuccess("Successfully updated transaction", zap.Bool("success", true))
 
-	return s.mapping.ToTransactionResponse(transaction), nil
+	return transaction, nil
 }
 
-func (s *transactionCommandService) TrashedTransaction(ctx context.Context, transactionID int) (*response.TransactionResponseDeleteAt, *response.ErrorResponse) {
+func (s *transactionCommandService) TrashedTransaction(ctx context.Context, transactionID int) (*db.Transaction, error) {
 	const method = "TrashedTransaction"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("transaction.id", transactionID))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("transaction.id", transactionID))
 
 	defer func() {
 		end(status)
@@ -239,18 +354,27 @@ func (s *transactionCommandService) TrashedTransaction(ctx context.Context, tran
 
 	res, err := s.transactionCommandRepository.TrashTransaction(ctx, transactionID)
 	if err != nil {
-		return s.errorhandler.HandleTrashedTransactionError(err, method, "FAILED_TRASH_TRANSACTION", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedTrashedTransaction.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
+
+	s.mencache.DeleteTransactionCache(ctx, transactionID)
 
 	logSuccess("Successfully trashed transaction", zap.Int("transaction.id", transactionID), zap.Bool("success", true))
 
-	return s.mapping.ToTransactionResponseDeleteAt(res), nil
+	return res, nil
 }
 
-func (s *transactionCommandService) RestoreTransaction(ctx context.Context, transactionID int) (*response.TransactionResponseDeleteAt, *response.ErrorResponse) {
+func (s *transactionCommandService) RestoreTransaction(ctx context.Context, transactionID int) (*db.Transaction, error) {
 	const method = "RestoreTransaction"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("transaction.id", transactionID))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("transaction.id", transactionID))
 
 	defer func() {
 		end(status)
@@ -258,18 +382,27 @@ func (s *transactionCommandService) RestoreTransaction(ctx context.Context, tran
 
 	res, err := s.transactionCommandRepository.RestoreTransaction(ctx, transactionID)
 	if err != nil {
-		return s.errorhandler.HandleRestoreTransactionError(err, method, "FAILED_RESTORE_TRANSACTION", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[*db.Transaction](
+			s.logger,
+			transaction_errors.ErrFailedRestoreTransaction.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
+
+	s.mencache.DeleteTransactionCache(ctx, transactionID)
 
 	logSuccess("Successfully restored transaction", zap.Int("transaction.id", transactionID), zap.Bool("success", true))
 
-	return s.mapping.ToTransactionResponseDeleteAt(res), nil
+	return res, nil
 }
 
-func (s *transactionCommandService) DeleteTransactionPermanently(ctx context.Context, transactionID int) (bool, *response.ErrorResponse) {
+func (s *transactionCommandService) DeleteTransactionPermanently(ctx context.Context, transactionID int) (bool, error) {
 	const method = "DeleteTransactionPermanently"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method, attribute.Int("transaction.id", transactionID))
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("transaction.id", transactionID))
 
 	defer func() {
 		end(status)
@@ -277,18 +410,27 @@ func (s *transactionCommandService) DeleteTransactionPermanently(ctx context.Con
 
 	success, err := s.transactionCommandRepository.DeleteTransactionPermanently(ctx, transactionID)
 	if err != nil {
-		return s.errorhandler.HandleDeleteTransactionPermanentError(err, method, "FAILED_DELETE_TRANSACTION_PERMANENTLY", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			transaction_errors.ErrFailedDeleteTransactionPermanently.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
+
+	s.mencache.DeleteTransactionCache(ctx, transactionID)
 
 	logSuccess("Successfully permanently deleted transaction", zap.Int("transaction.id", transactionID), zap.Bool("success", success))
 
 	return success, nil
 }
 
-func (s *transactionCommandService) RestoreAllTransactions(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *transactionCommandService) RestoreAllTransactions(ctx context.Context) (bool, error) {
 	const method = "RestoreAllTransactions"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
@@ -296,7 +438,14 @@ func (s *transactionCommandService) RestoreAllTransactions(ctx context.Context) 
 
 	success, err := s.transactionCommandRepository.RestoreAllTransactions(ctx)
 	if err != nil {
-		return s.errorhandler.HandleRestoreAllTransactionError(err, method, "FAILED_RESTORE_ALL_TRANSACTIONS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			transaction_errors.ErrFailedRestoreAllTransactions.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	logSuccess("All trashed transactions restored successfully", zap.Bool("success", success))
@@ -304,10 +453,10 @@ func (s *transactionCommandService) RestoreAllTransactions(ctx context.Context) 
 	return success, nil
 }
 
-func (s *transactionCommandService) DeleteAllTransactionPermanent(ctx context.Context) (bool, *response.ErrorResponse) {
+func (s *transactionCommandService) DeleteAllTransactionPermanent(ctx context.Context) (bool, error) {
 	const method = "DeleteAllTransactionPermanent"
 
-	ctx, span, end, status, logSuccess := s.startTracingAndLogging(ctx, method)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method)
 
 	defer func() {
 		end(status)
@@ -315,53 +464,17 @@ func (s *transactionCommandService) DeleteAllTransactionPermanent(ctx context.Co
 
 	success, err := s.transactionCommandRepository.DeleteAllTransactionPermanent(ctx)
 	if err != nil {
-		return s.errorhandler.HandleDeleteAllTransactionPermanentError(err, method, "FAILED_DELETE_ALL_TRANSACTION_PERMANENT", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[bool](
+			s.logger,
+			transaction_errors.ErrFailedDeleteAllTransactionPermanent.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
 	logSuccess("Successfully permanently deleted all trashed transactions", zap.Bool("success", success))
 
 	return success, nil
-}
-
-func (s *transactionCommandService) startTracingAndLogging(ctx context.Context, method string, attrs ...attribute.KeyValue) (
-	context.Context,
-	trace.Span,
-	func(string),
-	string,
-	func(string, ...zap.Field),
-) {
-	start := time.Now()
-	status := "success"
-
-	ctx, span := s.trace.Start(ctx, method)
-
-	if len(attrs) > 0 {
-		span.SetAttributes(attrs...)
-	}
-
-	span.AddEvent("Start: " + method)
-
-	s.logger.Debug("Start: " + method)
-
-	end := func(status string) {
-		s.recordMetrics(method, status, start)
-		code := codes.Ok
-		if status != "success" {
-			code = codes.Error
-		}
-		span.SetStatus(code, status)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	return ctx, span, end, status, logSuccess
-}
-
-func (s *transactionCommandService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
 }

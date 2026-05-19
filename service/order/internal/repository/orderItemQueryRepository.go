@@ -4,40 +4,63 @@ import (
 	"context"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
 	orderitem_errors "github.com/MamangRust/monolith-point-of-sale-shared/errors/order_item_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 )
 
 type orderItemQueryRepository struct {
-	db      *db.Queries
-	mapping recordmapper.OrderItemRecordMapping
+	client pb.OrderItemServiceClient
 }
 
-func NewOrderItemQueryRepository(db *db.Queries, mapping recordmapper.OrderItemRecordMapping) *orderItemQueryRepository {
+func NewOrderItemQueryRepository(client pb.OrderItemServiceClient) OrderItemQueryRepository {
 	return &orderItemQueryRepository{
-		db:      db,
-		mapping: mapping,
+		client: client,
 	}
 }
 
-func (r *orderItemQueryRepository) CalculateTotalPrice(ctx context.Context, order_id int) (*int32, error) {
-	res, err := r.db.CalculateTotalPrice(ctx, int32(order_id))
-
+func (r *orderItemQueryRepository) CalculateTotalPrice(ctx context.Context, orderID int) (*int32, error) {
+	items, err := r.FindOrderItemByOrder(ctx, orderID)
 	if err != nil {
 		return nil, orderitem_errors.ErrCalculateTotalPrice
 	}
 
-	return &res, nil
+	var total int32 = 0
+	for _, item := range items {
+		if item != nil {
+			total += item.Quantity * item.Price
+		}
+	}
 
+	return &total, nil
 }
 
-func (r *orderItemQueryRepository) FindOrderItemByOrder(ctx context.Context, order_id int) ([]*record.OrderItemRecord, error) {
-	res, err := r.db.GetOrderItemsByOrder(ctx, int32(order_id))
-
+func (r *orderItemQueryRepository) FindOrderItemByOrder(ctx context.Context, orderID int) ([]*db.OrderItem, error) {
+	resp, err := r.client.FindOrderItemByOrder(ctx, &pb.FindByIdOrderItemRequest{
+		Id: int32(orderID),
+	})
 	if err != nil {
 		return nil, orderitem_errors.ErrFindOrderItemByOrder
 	}
 
-	return r.mapping.ToOrderItemsRecord(res), nil
+	if resp == nil || resp.Data == nil {
+		return nil, orderitem_errors.ErrFindOrderItemByOrder
+	}
+
+	var res []*db.OrderItem
+	for _, item := range resp.Data {
+		if item == nil {
+			continue
+		}
+		res = append(res, &db.OrderItem{
+			OrderItemID: item.Id,
+			OrderID:     item.OrderId,
+			ProductID:   item.ProductId,
+			Quantity:    item.Quantity,
+			Price:       item.Price,
+			CreatedAt:    parsePgTimestamp(item.CreatedAt),
+			UpdatedAt:    parsePgTimestamp(item.UpdatedAt),
+		})
+	}
+
+	return res, nil
 }

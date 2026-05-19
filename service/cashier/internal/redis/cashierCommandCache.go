@@ -3,18 +3,22 @@ package mencache
 import (
 	"context"
 	"fmt"
+
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
 )
 
 type cashierCommandCache struct {
-	store *CacheStore
+	store *cache.CacheStore
 }
 
-func NewCashierCommandCache(store *CacheStore) *cashierCommandCache {
+func NewCashierCommandCache(store *cache.CacheStore) CashierCommandCache {
 	return &cashierCommandCache{store: store}
 }
 
 func (c *cashierCommandCache) DeleteCashierCache(ctx context.Context, id int) {
 	key := fmt.Sprintf(cashierByIdCacheKey, id)
+	cache.DeleteFromCache(ctx, c.store, key)
+}
 
-	DeleteFromCache(ctx, c.store, key)
+func (c *cashierCommandCache) DeleteCashierListCache(ctx context.Context) {
 }

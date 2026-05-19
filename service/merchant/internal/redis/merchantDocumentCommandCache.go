@@ -1,0 +1,21 @@
+package mencache
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
+)
+
+type merchantDocumentCommandCache struct {
+	store *cache.CacheStore
+}
+
+func NewMerchantDocumentCommandCache(store *cache.CacheStore) MerchantDocumentCommandCache {
+	return &merchantDocumentCommandCache{store: store}
+}
+
+func (s *merchantDocumentCommandCache) DeleteCachedMerchantDocuments(ctx context.Context, id int) {
+	key := fmt.Sprintf(merchantDocumentByIdCacheKey, id)
+	cache.DeleteFromCache(ctx, s.store, key)
+}

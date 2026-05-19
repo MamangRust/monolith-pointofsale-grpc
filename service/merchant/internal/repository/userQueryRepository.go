@@ -2,37 +2,54 @@ package repository
 
 import (
 	"context"
-	"database/sql"
-	"errors"
+	"time"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
-	"github.com/MamangRust/monolith-point-of-sale-shared/errors/user_errors"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	sharedErrors "github.com/MamangRust/monolith-point-of-sale-shared/errors"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type userQueryRepository struct {
-	db      *db.Queries
-	mapping recordmapper.UserRecordMapping
+	client pb.UserServiceClient
 }
 
-func NewUserQueryRepository(db *db.Queries, mapping recordmapper.UserRecordMapping) *userQueryRepository {
+func NewUserQueryRepository(client pb.UserServiceClient) UserQueryRepository {
 	return &userQueryRepository{
-		db:      db,
-		mapping: mapping,
+		client: client,
 	}
 }
 
-func (r *userQueryRepository) FindById(ctx context.Context, user_id int) (*record.UserRecord, error) {
-	res, err := r.db.GetUserByID(ctx, int32(user_id))
-
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, user_errors.ErrUserNotFound
-		}
-
-		return nil, user_errors.ErrUserNotFound
+func (r *userQueryRepository) FindById(ctx context.Context, userID int) (*db.User, error) {
+	res, err := r.client.FindById(ctx, &pb.FindByIdUserRequest{
+		Id: int32(userID),
+	})
+	if err != nil || res == nil || res.Data == nil {
+		return nil, sharedErrors.ErrInternal
 	}
 
-	return r.mapping.ToUserRecord(res), nil
+	var createdAt, updatedAt pgtype.Timestamp
+	if res.Data.CreatedAt != "" {
+		if t, err := time.Parse("2006-01-02 15:04:05", res.Data.CreatedAt); err == nil {
+			createdAt = pgtype.Timestamp{Time: t, Valid: true}
+		} else if t, err = time.Parse(time.RFC3339, res.Data.CreatedAt); err == nil {
+			createdAt = pgtype.Timestamp{Time: t, Valid: true}
+		}
+	}
+	if res.Data.UpdatedAt != "" {
+		if t, err := time.Parse("2006-01-02 15:04:05", res.Data.UpdatedAt); err == nil {
+			updatedAt = pgtype.Timestamp{Time: t, Valid: true}
+		} else if t, err = time.Parse(time.RFC3339, res.Data.UpdatedAt); err == nil {
+			updatedAt = pgtype.Timestamp{Time: t, Valid: true}
+		}
+	}
+
+	return &db.User{
+		UserID:    res.Data.Id,
+		Firstname: res.Data.Firstname,
+		Lastname:  res.Data.Lastname,
+		Email:     res.Data.Email,
+		CreatedAt: createdAt,
+		UpdatedAt: updatedAt,
+	}, nil
 }

@@ -2,7 +2,7 @@ package repository
 
 import (
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 )
 
 type Repositories struct {
@@ -16,21 +16,21 @@ type Repositories struct {
 	TransactionStatsByMerchant   TransactionStatsByMerchantRepository
 }
 
-func NewRepositories(DB *db.Queries) *Repositories {
-	mapperOrderItem := recordmapper.NewOrderItemRecordMapper()
-	mapperOrder := recordmapper.NewOrderRecordMapper()
-	mapperTransaction := recordmapper.NewTransactionRecordMapper()
-	mapperMerchant := recordmapper.NewMerchantRecordMapper()
-	mapperCashier := recordmapper.NewCashierRecordMapper()
-
+func NewRepositories(
+	DB *db.Queries,
+	cashierClient pb.CashierServiceClient,
+	merchantClient pb.MerchantServiceClient,
+	orderClient pb.OrderServiceClient,
+	orderItemClient pb.OrderItemServiceClient,
+) *Repositories {
 	return &Repositories{
-		CashierQuery:                 NewCashierQueryRepository(DB, mapperCashier),
-		MerchantQuery:                NewMerchantQueryRepository(DB, mapperMerchant),
-		OrderQuery:                   NewOrderQueryRepository(DB, mapperOrder),
-		OrderItemQuery:               NewOrderItemQueryRepository(DB, mapperOrderItem),
-		TransactionCommandRepository: NewTransactionCommandRepository(DB, mapperTransaction),
-		TransactionQueryRepository:   NewTransactionQueryRepository(DB, mapperTransaction),
-		TransactionStatsRepository:   NewTransactionStatsRepository(DB, mapperTransaction),
-		TransactionStatsByMerchant:   NewTransactionStatsByMerchantRepository(DB, mapperTransaction),
+		CashierQuery:                 NewCashierQueryRepository(cashierClient),
+		MerchantQuery:                NewMerchantQueryRepository(merchantClient),
+		OrderQuery:                   NewOrderQueryRepository(orderClient),
+		OrderItemQuery:               NewOrderItemQueryRepository(orderItemClient),
+		TransactionCommandRepository: NewTransactionCommandRepository(DB),
+		TransactionQueryRepository:   NewTransactionQueryRepository(DB),
+		TransactionStatsRepository:   NewTransactionStatsRepository(DB),
+		TransactionStatsByMerchant:   NewTransactionStatsByMerchantRepository(DB),
 	}
 }

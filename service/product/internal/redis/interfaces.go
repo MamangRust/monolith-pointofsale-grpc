@@ -3,28 +3,28 @@ package mencache
 import (
 	"context"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
 )
 
 type ProductQueryCache interface {
-	GetCachedProducts(ctx context.Context, req *requests.FindAllProducts) ([]*response.ProductResponse, *int, bool)
-	SetCachedProducts(ctx context.Context, req *requests.FindAllProducts, data []*response.ProductResponse, total *int)
+	GetCachedProducts(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsRow, *int, bool)
+	SetCachedProducts(ctx context.Context, req *requests.FindAllProducts, data []*db.GetProductsRow, total *int)
 
-	GetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest) ([]*response.ProductResponse, *int, bool)
-	SetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest, data []*response.ProductResponse, total *int)
+	GetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest) ([]*db.GetProductsByMerchantRow, *int, bool)
+	SetCachedProductsByMerchant(ctx context.Context, req *requests.ProductByMerchantRequest, data []*db.GetProductsByMerchantRow, total *int)
 
-	GetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest) ([]*response.ProductResponse, *int, bool)
-	SetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest, data []*response.ProductResponse, total *int)
+	GetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest) ([]*db.GetProductsByCategoryNameRow, *int, bool)
+	SetCachedProductsByCategory(ctx context.Context, req *requests.ProductByCategoryRequest, data []*db.GetProductsByCategoryNameRow, total *int)
 
-	GetCachedProductActive(ctx context.Context, req *requests.FindAllProducts) ([]*response.ProductResponseDeleteAt, *int, bool)
-	SetCachedProductActive(ctx context.Context, req *requests.FindAllProducts, data []*response.ProductResponseDeleteAt, total *int)
+	GetCachedProductActive(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsActiveRow, *int, bool)
+	SetCachedProductActive(ctx context.Context, req *requests.FindAllProducts, data []*db.GetProductsActiveRow, total *int)
 
-	GetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts) ([]*response.ProductResponseDeleteAt, *int, bool)
-	SetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts, data []*response.ProductResponseDeleteAt, total *int)
+	GetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts) ([]*db.GetProductsTrashedRow, *int, bool)
+	SetCachedProductTrashed(ctx context.Context, req *requests.FindAllProducts, data []*db.GetProductsTrashedRow, total *int)
 
-	GetCachedProduct(ctx context.Context, productID int) (*response.ProductResponse, bool)
-	SetCachedProduct(ctx context.Context, data *response.ProductResponse)
+	GetCachedProduct(ctx context.Context, productID int) (*db.Product, bool)
+	SetCachedProduct(ctx context.Context, data *db.Product)
 }
 
 type ProductCommandCache interface {

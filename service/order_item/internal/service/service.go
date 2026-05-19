@@ -3,11 +3,10 @@ package service
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-point-of-sale-order-item/internal/errorhandler"
 	mencache "github.com/MamangRust/monolith-point-of-sale-order-item/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-order-item/internal/repository"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 )
 
 type Service struct {
@@ -15,17 +14,20 @@ type Service struct {
 }
 
 type Deps struct {
-	Ctx          context.Context
-	ErrorHandler *errorhandler.ErrorHandler
-	Mencache     *mencache.Mencache
-	Repositories *repository.Repositories
-	Logger       logger.LoggerInterface
+	Ctx           context.Context
+	Mencache      mencache.Mencache
+	Repositories  *repository.Repositories
+	Logger        logger.LoggerInterface
+	Observability observability.TraceLoggerObservability
 }
 
 func NewService(deps *Deps) *Service {
-	mapper := response_service.NewOrderItemResponseMapper()
-
 	return &Service{
-		OrderItemQuery: NewOrderItemQueryService(deps.Ctx, deps.ErrorHandler.OrderItemQueryError, deps.Mencache.OrderItemQueryCache, deps.Repositories.OrderItemQuery, deps.Logger, mapper),
+		OrderItemQuery: NewOrderItemQueryService(&orderItemQueryDeps{
+			Cache:         deps.Mencache,
+			Repo:          deps.Repositories.OrderItemQuery,
+			Logger:        deps.Logger,
+			Observability: deps.Observability,
+		}),
 	}
 }

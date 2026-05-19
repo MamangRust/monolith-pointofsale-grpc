@@ -3,26 +3,25 @@ package repository
 import (
 	"context"
 
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/record"
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
 )
 
 type RoleQueryRepository interface {
-	FindAllRoles(ctx context.Context, req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error)
-	FindById(ctx context.Context, role_id int) (*record.RoleRecord, error)
-	FindByName(ctx context.Context, name string) (*record.RoleRecord, error)
-	FindByUserId(ctx context.Context, user_id int) ([]*record.RoleRecord, error)
-	FindByActiveRole(ctx context.Context, req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error)
-	FindByTrashedRole(ctx context.Context, req *requests.FindAllRoles) ([]*record.RoleRecord, *int, error)
+	FindAllRoles(ctx context.Context, req *requests.FindAllRoles) ([]*db.GetRolesRow, *int, error)
+	FindById(ctx context.Context, roleID int) (*db.Role, error)
+	FindByName(ctx context.Context, name string) (*db.Role, error)
+	FindByUserId(ctx context.Context, userID int) ([]*db.Role, error)
+	FindByActiveRole(ctx context.Context, req *requests.FindAllRoles) ([]*db.GetActiveRolesRow, *int, error)
+	FindByTrashedRole(ctx context.Context, req *requests.FindAllRoles) ([]*db.GetTrashedRolesRow, *int, error)
 }
 
 type RoleCommandRepository interface {
-	CreateRole(ctx context.Context, request *requests.CreateRoleRequest) (*record.RoleRecord, error)
-	UpdateRole(ctx context.Context, request *requests.UpdateRoleRequest) (*record.RoleRecord, error)
-	TrashedRole(ctx context.Context, role_id int) (*record.RoleRecord, error)
-
-	RestoreRole(ctx context.Context, role_id int) (*record.RoleRecord, error)
-	DeleteRolePermanent(ctx context.Context, role_id int) (bool, error)
+	CreateRole(ctx context.Context, request *requests.CreateRoleRequest) (*db.Role, error)
+	UpdateRole(ctx context.Context, request *requests.UpdateRoleRequest) (*db.Role, error)
+	TrashedRole(ctx context.Context, roleID int) (*db.Role, error)
+	RestoreRole(ctx context.Context, roleID int) (*db.Role, error)
+	DeleteRolePermanent(ctx context.Context, roleID int) (bool, error)
 	RestoreAllRole(ctx context.Context) (bool, error)
 	DeleteAllRolePermanent(ctx context.Context) (bool, error)
 }

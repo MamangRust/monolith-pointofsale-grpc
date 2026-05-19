@@ -2,40 +2,37 @@ package service
 
 import (
 	"context"
-	"time"
 
+	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
 	"github.com/MamangRust/monolith-point-of-sale-shared/domain/requests"
-	"github.com/MamangRust/monolith-point-of-sale-shared/domain/response"
-	response_service "github.com/MamangRust/monolith-point-of-sale-shared/mapper/response/service"
-	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/errorhandler"
+	sharederrorhandler "github.com/MamangRust/monolith-point-of-sale-shared/errorhandler"
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors/transaction_errors"
+	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 	mencache "github.com/MamangRust/monolith-point-of-sale-transacton/internal/redis"
 	"github.com/MamangRust/monolith-point-of-sale-transacton/internal/repository"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type transactionStatsService struct {
-	errorhandler               errorhandler.TransactionStatsError
 	mencache                   mencache.TransactionStatsCache
 	trace                      trace.Tracer
 	transactionStatsRepository repository.TransactionStatsRepository
-	mapping                    response_service.TransactionResponseMapper
 	logger                     logger.LoggerInterface
+	observability              observability.TraceLoggerObservability
 	requestCounter             *prometheus.CounterVec
 	requestDuration            *prometheus.HistogramVec
 }
 
 func NewTransactionStatsService(
-	errorhandler errorhandler.TransactionStatsError,
 	mencache mencache.TransactionStatsCache,
 	transactionStatsRepository repository.TransactionStatsRepository,
-	mapping response_service.TransactionResponseMapper,
 	logger logger.LoggerInterface,
+	obs observability.TraceLoggerObservability,
 ) *transactionStatsService {
 	requestCounter := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -47,7 +44,7 @@ func NewTransactionStatsService(
 
 	requestDuration := prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "transaction_stats_service_request_duration",
+			Name:    "transaction_stats_service_request_duration_seconds",
 			Help:    "Histogram of request durations for the TransactionStatsService",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -57,286 +54,286 @@ func NewTransactionStatsService(
 	prometheus.MustRegister(requestCounter, requestDuration)
 
 	return &transactionStatsService{
-		errorhandler:               errorhandler,
 		mencache:                   mencache,
 		trace:                      otel.Tracer("transaction-stats-service"),
 		transactionStatsRepository: transactionStatsRepository,
-		mapping:                    mapping,
 		logger:                     logger,
+		observability:              obs,
 		requestCounter:             requestCounter,
 		requestDuration:            requestDuration,
 	}
 }
 
-func (s *transactionStatsService) FindMonthlyAmountSuccess(ctx context.Context, req *requests.MonthAmountTransaction) ([]*response.TransactionMonthlyAmountSuccessResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindMonthlyAmountSuccess(ctx context.Context, req *requests.MonthAmountTransaction) ([]*db.GetMonthlyAmountTransactionSuccessRow, error) {
 	const method = "FindMonthlyAmountSuccess"
 
 	year := req.Year
 	month := req.Month
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, year, &month)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year), attribute.Int("month", month))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedMonthAmountSuccessCached(ctx, req); found {
 		logSuccess("Successfully fetched monthly successful transaction amounts from cache", zap.Int("year", year), zap.Int("month", month))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetMonthlyAmountSuccess(ctx, req)
-
 	if err != nil {
-		return s.errorhandler.HandleMonthlyAmountSuccessError(err, method, "FAILED_FIND_MONTHLY_AMOUNT_SUCCESS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyAmountTransactionSuccessRow](
+			s.logger,
+			transaction_errors.ErrFailedFindMonthlyAmountSuccess.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionMonthlyAmountSuccess(res)
-
-	s.mencache.SetCachedMonthAmountSuccessCached(ctx, req, so)
+	s.mencache.SetCachedMonthAmountSuccessCached(ctx, req, res)
 
 	logSuccess("Successfully fetched monthly successful transaction amounts", zap.Int("year", year), zap.Int("month", month))
 
-	return so, nil
+	return res, nil
 }
 
-func (s *transactionStatsService) FindYearlyAmountSuccess(ctx context.Context, year int) ([]*response.TransactionYearlyAmountSuccessResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindYearlyAmountSuccess(ctx context.Context, year int) ([]*db.GetYearlyAmountTransactionSuccessRow, error) {
 	const method = "FindYearlyAmountSuccess"
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, year, nil)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedYearAmountSuccessCached(ctx, year); found {
 		logSuccess("Successfully fetched yearly successful transaction amounts from cache", zap.Int("year", year))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetYearlyAmountSuccess(ctx, year)
 	if err != nil {
-		return s.errorhandler.HandleYearlyAmountSuccessError(err, method, "FAILED_FIND_YEARLY_AMOUNT_SUCCESS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyAmountTransactionSuccessRow](
+			s.logger,
+			transaction_errors.ErrFailedFindYearlyAmountSuccess.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionYearlyAmountSuccess(res)
-
-	s.mencache.SetCachedYearAmountSuccessCached(ctx, year, so)
+	s.mencache.SetCachedYearAmountSuccessCached(ctx, year, res)
 
 	logSuccess("Successfully fetched yearly successful transaction amounts", zap.Int("year", year))
 
-	return so, nil
+	return res, nil
 }
 
-func (s *transactionStatsService) FindMonthlyAmountFailed(ctx context.Context, req *requests.MonthAmountTransaction) ([]*response.TransactionMonthlyAmountFailedResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindMonthlyAmountFailed(ctx context.Context, req *requests.MonthAmountTransaction) ([]*db.GetMonthlyAmountTransactionFailedRow, error) {
 	const method = "FindMonthlyAmountFailed"
 
 	year := req.Year
 	month := req.Month
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, year, &month)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", year), attribute.Int("month", month))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedMonthAmountFailedCached(ctx, req); found {
 		logSuccess("Successfully fetched monthly failed transaction amounts from cache", zap.Int("year", year), zap.Int("month", month))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetMonthlyAmountFailed(ctx, req)
 	if err != nil {
-		return s.errorhandler.HandleMonthlyAmountFailedError(err, method, "FAILED_FIND_MONTHLY_AMOUNT_FAILED", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyAmountTransactionFailedRow](
+			s.logger,
+			transaction_errors.ErrFailedFindMonthlyAmountFailed.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionMonthlyAmountFailed(res)
-
-	s.mencache.SetCachedMonthAmountFailedCached(ctx, req, so)
+	s.mencache.SetCachedMonthAmountFailedCached(ctx, req, res)
 
 	logSuccess("Successfully fetched monthly failed transaction amounts", zap.Int("year", year), zap.Int("month", month))
 
-	return so, nil
+	return res, nil
 }
 
-func (s *transactionStatsService) FindYearlyAmountFailed(ctx context.Context, year int) ([]*response.TransactionYearlyAmountFailedResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindYearlyAmountFailed(ctx context.Context, year int) ([]*db.GetYearlyAmountTransactionFailedRow, error) {
 	const method = "FindYearlyAmountFailed"
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, year, nil)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedYearAmountFailedCached(ctx, year); found {
 		logSuccess("Successfully fetched yearly failed transaction amounts from cache", zap.Int("year", year))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetYearlyAmountFailed(ctx, year)
-
 	if err != nil {
-		return s.errorhandler.HandleYearlyAmountFailedError(err, method, "FAILED_FIND_YEARLY_AMOUNT_FAILED", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyAmountTransactionFailedRow](
+			s.logger,
+			transaction_errors.ErrFailedFindYearlyAmountFailed.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionYearlyAmountFailed(res)
-
-	s.mencache.SetCachedYearAmountFailedCached(ctx, year, so)
+	s.mencache.SetCachedYearAmountFailedCached(ctx, year, res)
 
 	logSuccess("Successfully fetched yearly failed transaction amounts", zap.Int("year", year))
 
-	return so, nil
+	return res, nil
 }
 
-func (s *transactionStatsService) FindMonthlyMethodSuccess(ctx context.Context, req *requests.MonthMethodTransaction) ([]*response.TransactionMonthlyMethodResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindMonthlyMethodSuccess(ctx context.Context, req *requests.MonthMethodTransaction) ([]*db.GetMonthlyTransactionMethodsSuccessRow, error) {
 	const method = "FindMonthlyMethodSuccess"
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, req.Year, &req.Month)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", req.Year), attribute.Int("month", req.Month))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedMonthMethodSuccessCached(ctx, req); found {
 		logSuccess("Successfully fetched monthly successful transaction methods from cache", zap.Int("year", req.Year), zap.Int("month", req.Month))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetMonthlyTransactionMethodSuccess(ctx, req)
-
 	if err != nil {
-		return s.errorhandler.HandleMonthlyMethodSuccessError(err, method, "FAILED_FIND_MONTHLY_METHOD_SUCCESS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyTransactionMethodsSuccessRow](
+			s.logger,
+			transaction_errors.ErrFailedFindMonthlyMethod.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionMonthlyMethod(res)
-
-	s.mencache.SetCachedMonthMethodSuccessCached(ctx, req, so)
+	s.mencache.SetCachedMonthMethodSuccessCached(ctx, req, res)
 
 	logSuccess("Successfully fetched monthly successful transaction methods", zap.Int("year", req.Year), zap.Int("month", req.Month))
 
-	return so, nil
+	return res, nil
 }
 
-func (s *transactionStatsService) FindYearlyMethodSuccess(ctx context.Context, year int) ([]*response.TransactionYearlyMethodResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindYearlyMethodSuccess(ctx context.Context, year int) ([]*db.GetYearlyTransactionMethodsSuccessRow, error) {
 	const method = "FindYearlyMethodSuccess"
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, year, nil)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedYearMethodSuccessCached(ctx, year); found {
 		logSuccess("Successfully fetched yearly successful transaction methods from cache", zap.Int("year", year))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetYearlyTransactionMethodSuccess(ctx, year)
-
 	if err != nil {
-		return s.errorhandler.HandleYearlyMethodSuccessError(err, method, "FAILED_FIND_YEARLY_METHOD_SUCCESS", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyTransactionMethodsSuccessRow](
+			s.logger,
+			transaction_errors.ErrFailedFindYearlyMethod.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionYearlyMethod(res)
-
-	s.mencache.SetCachedYearMethodSuccessCached(ctx, year, so)
+	s.mencache.SetCachedYearMethodSuccessCached(ctx, year, res)
 
 	logSuccess("Successfully fetched yearly successful transaction methods", zap.Int("year", year))
 
-	return so, nil
+	return res, nil
 }
 
-func (s *transactionStatsService) FindMonthlyMethodFailed(ctx context.Context, req *requests.MonthMethodTransaction) ([]*response.TransactionMonthlyMethodResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindMonthlyMethodFailed(ctx context.Context, req *requests.MonthMethodTransaction) ([]*db.GetMonthlyTransactionMethodsFailedRow, error) {
 	const method = "FindMonthlyMethodFailed"
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, req.Year, &req.Month)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method,
+		attribute.Int("year", req.Year), attribute.Int("month", req.Month))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedMonthMethodFailedCached(ctx, req); found {
 		logSuccess("Successfully fetched monthly failed transaction methods from cache", zap.Int("year", req.Year), zap.Int("month", req.Month))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetMonthlyTransactionMethodFailed(ctx, req)
-
 	if err != nil {
-		return s.errorhandler.HandleMonthlyMethodFailedError(err, method, "FAILED_FIND_MONTHLY_METHOD_FAILED", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetMonthlyTransactionMethodsFailedRow](
+			s.logger,
+			transaction_errors.ErrFailedFindMonthlyMethod.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionMonthlyMethod(res)
-
-	s.mencache.SetCachedMonthMethodFailedCached(ctx, req, so)
+	s.mencache.SetCachedMonthMethodFailedCached(ctx, req, res)
 
 	logSuccess("Successfully fetched monthly failed transaction methods", zap.Int("year", req.Year), zap.Int("month", req.Month))
 
-	return so, nil
+	return res, nil
 }
 
-func (s *transactionStatsService) FindYearlyMethodFailed(ctx context.Context, year int) ([]*response.TransactionYearlyMethodResponse, *response.ErrorResponse) {
+func (s *transactionStatsService) FindYearlyMethodFailed(ctx context.Context, year int) ([]*db.GetYearlyTransactionMethodsFailedRow, error) {
 	const method = "FindYearlyMethodFailed"
 
-	ctx, span, end, status, logSuccess := s.startTraceWithLogging(ctx, method, year, nil)
+	ctx, span, end, status, logSuccess := s.observability.StartTracingAndLogging(ctx, method, attribute.Int("year", year))
 
-	defer end()
+	defer func() {
+		end(status)
+	}()
 
 	if data, found := s.mencache.GetCachedYearMethodFailedCached(ctx, year); found {
 		logSuccess("Successfully fetched yearly failed transaction methods from cache", zap.Int("year", year))
-
 		return data, nil
 	}
 
 	res, err := s.transactionStatsRepository.GetYearlyTransactionMethodFailed(ctx, year)
-
 	if err != nil {
-		return s.errorhandler.HandleYearlyMethodFailedError(err, method, "FAILED_FIND_YEARLY_METHOD_FAILED", span, &status, zap.Error(err))
+		status = "error"
+		return sharederrorhandler.HandleError[[]*db.GetYearlyTransactionMethodsFailedRow](
+			s.logger,
+			transaction_errors.ErrFailedFindYearlyMethod.WithInternal(err),
+			method,
+			span,
+			zap.Error(err),
+		)
 	}
 
-	so := s.mapping.ToTransactionYearlyMethod(res)
-
-	s.mencache.SetCachedYearMethodFailedCached(ctx, year, so)
+	s.mencache.SetCachedYearMethodFailedCached(ctx, year, res)
 
 	logSuccess("Successfully fetched yearly failed transaction methods", zap.Int("year", year))
 
-	return so, nil
-}
-
-func (s *transactionStatsService) startTraceWithLogging(ctx context.Context, method string, year int, month *int) (context.Context, trace.Span, func(), string, func(string, ...zap.Field)) {
-	start := time.Now()
-	status := "success"
-
-	ctx, span := s.trace.Start(ctx, method)
-
-	attrs := []attribute.KeyValue{
-		attribute.String("method", method),
-		attribute.Int("year", year),
-	}
-
-	logFields := []zap.Field{
-		zap.String("method", method),
-		zap.Int("year", year),
-	}
-
-	if month != nil {
-		attrs = append(attrs, attribute.Int("month", *month))
-		logFields = append(logFields, zap.Int("month", *month))
-	}
-
-	span.SetAttributes(attrs...)
-	msg := "Start " + method
-	s.logger.Debug(msg, logFields...)
-	span.AddEvent(msg)
-
-	end := func() {
-		span.SetStatus(codes.Ok, status)
-		s.recordMetrics(method, status, start)
-		span.End()
-	}
-
-	logSuccess := func(msg string, fields ...zap.Field) {
-		span.AddEvent(msg)
-		s.logger.Debug(msg, fields...)
-	}
-
-	return ctx, span, end, status, logSuccess
-}
-
-func (s *transactionStatsService) recordMetrics(method string, status string, start time.Time) {
-	s.requestCounter.WithLabelValues(method, status).Inc()
-	s.requestDuration.WithLabelValues(method).Observe(time.Since(start).Seconds())
+	return res, nil
 }

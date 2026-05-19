@@ -2,7 +2,7 @@ package repository
 
 import (
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
-	recordmapper "github.com/MamangRust/monolith-point-of-sale-shared/mapper/record"
+	"github.com/MamangRust/monolith-point-of-sale-shared/pb"
 )
 
 type Repositories struct {
@@ -18,23 +18,23 @@ type Repositories struct {
 	OrderStatsByMerchant OrderStatByMerchantRepository
 }
 
-func NewRepositories(DB *db.Queries) *Repositories {
-	mapperCashier := recordmapper.NewCashierRecordMapper()
-	mapperMerchant := recordmapper.NewMerchantRecordMapper()
-	mapperProduct := recordmapper.NewProductRecordMapper()
-	mapperOrder := recordmapper.NewOrderRecordMapper()
-	mapperOrderItem := recordmapper.NewOrderItemRecordMapper()
-
+func NewRepositories(
+	DB *db.Queries,
+	cashierClient pb.CashierServiceClient,
+	merchantClient pb.MerchantServiceClient,
+	productClient pb.ProductServiceClient,
+	orderItemClient pb.OrderItemServiceClient,
+) *Repositories {
 	return &Repositories{
-		CashierQuery:         NewCashierQueryRepository(DB, mapperCashier),
-		MerchantQuery:        NewMerchantQueryRepository(DB, mapperMerchant),
-		ProductQuery:         NewProductQueryRepository(DB, mapperProduct),
-		ProductCommand:       NewProductCommandRepository(DB, mapperProduct),
-		OrderQuery:           NewOrderQueryRepository(DB, mapperOrder),
-		OrderCommand:         NewOrderCommandRepository(DB, mapperOrder),
-		OrderItemQuery:       NewOrderItemQueryRepository(DB, mapperOrderItem),
-		OrderItemCommand:     NewOrderItemCommandRepository(DB, mapperOrderItem),
-		OrderStats:           NewOrderStatsRepository(DB, mapperOrder),
-		OrderStatsByMerchant: NewOrderStatsByMerchantRepository(DB, mapperOrder),
+		CashierQuery:         NewCashierQueryRepository(cashierClient),
+		MerchantQuery:        NewMerchantQueryRepository(merchantClient),
+		ProductQuery:         NewProductQueryRepository(productClient),
+		ProductCommand:       NewProductCommandRepository(productClient),
+		OrderQuery:           NewOrderQueryRepository(DB),
+		OrderCommand:         NewOrderCommandRepository(DB),
+		OrderItemQuery:       NewOrderItemQueryRepository(orderItemClient),
+		OrderItemCommand:     NewOrderItemCommandRepository(DB),
+		OrderStats:           NewOrderStatsRepository(DB),
+		OrderStatsByMerchant: NewOrderStatsByMerchantRepository(DB),
 	}
 }
