@@ -1,6 +1,6 @@
 module github.com/MamangRust/monolith-point-of-sale-migrate
 
-go 1.23.4
+go 1.25.0
 
 require (
 	github.com/MamangRust/monolith-point-of-sale-pkg v1.0.2
@@ -27,9 +27,9 @@ require (
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.39.0 // indirect
-	golang.org/x/sync v0.15.0 // indirect
+	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.26.0 // indirect
+	golang.org/x/text v0.29.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

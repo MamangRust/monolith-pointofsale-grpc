@@ -195,13 +195,13 @@ WITH filtered_products AS (
         p.deleted_at IS NULL
         AND c.name = $1  
         AND (
-            $2 IS NULL 
-            OR p.name ILIKE '%' || $2 || '%' 
-            OR p.description ILIKE '%' || $2 || '%'
+            $2::text IS NULL 
+            OR p.name ILIKE '%' || $2::text || '%' 
+            OR p.description ILIKE '%' || $2::text || '%'
         )
         AND (
-            ($3 IS NULL OR p.price >= $3)
-            AND ($4 IS NULL OR p.price <= $4)
+            ($3::int IS NULL OR p.price >= $3::int)
+            AND ($4::int IS NULL OR p.price <= $4::int)
         )
 )
 SELECT 
@@ -313,6 +313,43 @@ UPDATE products
 SET count_in_stock = $2
 WHERE product_id = $1
     AND deleted_at IS NULL
+RETURNING *;
+
+-- IncrementProductCountStock: Atomically increments product stock
+-- Purpose: Restore inventory after a compensated order operation
+-- Parameters:
+--   $1: product_id - Product to update
+--   $2: quantity - Amount to add to current stock
+-- Returns: Updated product record
+-- Business Logic:
+--   - Atomic increment (no lost update between read and write)
+--   - Refuses non-positive quantities
+-- name: IncrementProductCountStock :one
+UPDATE products
+SET count_in_stock = count_in_stock + sqlc.arg(quantity),
+    updated_at = CURRENT_TIMESTAMP
+WHERE product_id = sqlc.arg(product_id)
+    AND deleted_at IS NULL
+    AND sqlc.arg(quantity) > 0
+RETURNING *;
+
+-- DecrementProductCountStock: Atomically decrements product stock
+-- Purpose: Safe inventory decrement with optimistic concurrency guard
+-- Parameters:
+--   $1: product_id - Product to update
+--   $2: quantity - Amount to subtract from current stock
+-- Returns: Updated product record
+-- Business Logic:
+--   - Atomic decrement (no lost update between read and write)
+--   - Refuses to go below zero: WHERE count_in_stock >= $2
+--   - Returns zero rows when stock is insufficient (caller maps to 400)
+-- name: DecrementProductCountStock :one
+UPDATE products
+SET count_in_stock = count_in_stock - sqlc.arg(quantity),
+    updated_at = CURRENT_TIMESTAMP
+WHERE product_id = sqlc.arg(product_id)
+    AND deleted_at IS NULL
+    AND count_in_stock >= sqlc.arg(quantity)
 RETURNING *;
 
 -- TrashProduct: Soft-deletes a product

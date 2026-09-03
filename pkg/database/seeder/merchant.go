@@ -2,7 +2,6 @@ package seeder
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
@@ -42,10 +41,10 @@ func (r *merchantSeeder) Seed() error {
 		merchant := db.CreateMerchantParams{
 			UserID:       userID,
 			Name:         fmt.Sprintf("Toko %d", i),
-			Description:  sql.NullString{String: fmt.Sprintf("Deskripsi untuk Toko %d", i), Valid: true},
-			Address:      sql.NullString{String: fmt.Sprintf("Jl. Toko %d", i), Valid: true},
-			ContactEmail: sql.NullString{String: fmt.Sprintf("toko%d@example.com", i), Valid: true},
-			ContactPhone: sql.NullString{String: fmt.Sprintf("0812345678%d", i), Valid: true},
+			Description:  ptrString(fmt.Sprintf("Deskripsi untuk Toko %d", i)),
+			Address:      ptrString(fmt.Sprintf("Jl. Toko %d", i)),
+			ContactEmail: ptrString(fmt.Sprintf("toko%d@example.com", i)),
+			ContactPhone: ptrString(fmt.Sprintf("0812345678%d", i)),
 			Status:       "active",
 		}
 

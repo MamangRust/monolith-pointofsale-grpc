@@ -1,21 +1,23 @@
 package product_errors
 
-import "errors"
+import (
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
+)
 
 var (
-	ErrFindAllProducts           = errors.New("failed to find all products")
-	ErrFindByActive              = errors.New("failed to find active products")
-	ErrFindByTrashed             = errors.New("failed to find trashed products")
-	ErrFindByMerchant            = errors.New("failed to find products by merchant")
-	ErrFindByCategory            = errors.New("failed to find products by category")
-	ErrFindById                  = errors.New("failed to find product by ID")
-	ErrFindByIdTrashed           = errors.New("failed to find trashed product by ID")
-	ErrCreateProduct             = errors.New("failed to create product")
-	ErrUpdateProduct             = errors.New("failed to update product")
-	ErrUpdateProductCountStock   = errors.New("failed to update product stock count")
-	ErrTrashedProduct            = errors.New("failed to move product to trash")
-	ErrRestoreProduct            = errors.New("failed to restore product")
-	ErrDeleteProductPermanent    = errors.New("failed to permanently delete product")
-	ErrRestoreAllProducts        = errors.New("failed to restore all products")
-	ErrDeleteAllProductPermanent = errors.New("failed to permanently delete all products")
+	ErrFindAllProducts           = errors.ErrInternal.WithMessage("Failed to find all products")
+	ErrFindByActive              = errors.ErrInternal.WithMessage("Failed to find active products")
+	ErrFindByTrashed             = errors.ErrInternal.WithMessage("Failed to find trashed products")
+	ErrFindByMerchant            = errors.ErrInternal.WithMessage("Failed to find products by merchant")
+	ErrFindByCategory            = errors.ErrInternal.WithMessage("Failed to find products by category")
+	ErrFindById                  = errors.ErrInternal.WithMessage("Failed to find product by ID")
+	ErrFindByIdTrashed           = errors.ErrInternal.WithMessage("Failed to find trashed product by ID")
+	ErrCreateProduct             = errors.ErrInternal.WithMessage("Failed to create product")
+	ErrUpdateProduct             = errors.ErrInternal.WithMessage("Failed to update product")
+	ErrUpdateProductCountStock   = errors.ErrInternal.WithMessage("Failed to update product stock count")
+	ErrTrashedProduct            = errors.ErrInternal.WithMessage("Failed to move product to trash")
+	ErrRestoreProduct            = errors.ErrInternal.WithMessage("Failed to restore product")
+	ErrDeleteProductPermanent    = errors.ErrInternal.WithMessage("Failed to permanently delete product")
+	ErrRestoreAllProducts        = errors.ErrInternal.WithMessage("Failed to restore all products")
+	ErrDeleteAllProductPermanent = errors.ErrInternal.WithMessage("Failed to permanently delete all products")
 )

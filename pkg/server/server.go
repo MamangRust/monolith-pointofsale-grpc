@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,8 +19,10 @@ import (
 	otel_pkg "github.com/MamangRust/monolith-point-of-sale-pkg/otel"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/resilience"
 	"github.com/MamangRust/monolith-point-of-sale-shared/cache"
+	"github.com/MamangRust/monolith-point-of-sale-shared/convert"
 	"github.com/MamangRust/monolith-point-of-sale-shared/observability"
 	"github.com/grafana/pyroscope-go"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
@@ -31,15 +34,25 @@ import (
 )
 
 type GRPCServer struct {
-	Logger            logger.LoggerInterface
-	DB                *db.Queries
-	Ctx               context.Context
-	Cancel            context.CancelFunc
-	CacheStore        *cache.CacheStore
-	Redis             *redis.Client
-	TelemetryShutdown func(context.Context) error
-	Config            *Config
-	RegisterServices  func(*grpc.Server)
+	Logger           logger.LoggerInterface
+	DB               *db.Queries
+	DBPool           *pgxpool.Pool
+	Ctx              context.Context
+	Cancel           context.CancelFunc
+	CacheStore       *cache.CacheStore
+	Redis            *redis.Client
+	Telemetry        *otel_pkg.Telemetry
+	Config           *Config
+	RegisterServices func(*grpc.Server)
+	cleanupHooks     []func() error
+}
+
+// AddCleanupHook registers a resource cleanup function owned by the service
+// application. Hooks run before the shared Redis and telemetry cleanup.
+func (s *GRPCServer) AddCleanupHook(hook func() error) {
+	if hook != nil {
+		s.cleanupHooks = append(s.cleanupHooks, hook)
+	}
 }
 
 func New(cfg *Config) (*GRPCServer, error) {
@@ -51,32 +64,23 @@ func New(cfg *Config) (*GRPCServer, error) {
 		log.Printf("Warning: Failed to initialize pyroscope: %v", err)
 	}
 
-	shutdownFunc, err := otel_pkg.InitTracerProvider(cfg.ServiceName, context.Background())
-	if err != nil {
+	telemetry := initTelemetry(cfg)
+	if err := telemetry.Init(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to initialize telemetry: %w", err)
 	}
 
 	cacheMetrics, err := observability.NewCacheMetrics("cache")
 	if err != nil {
-		if shutdownFunc != nil {
-			_ = shutdownFunc(context.Background())
-		}
 		return nil, fmt.Errorf("failed to initialize cache metrics: %w", err)
 	}
 
-	l, err := logger.NewLogger(cfg.ServiceName)
+	l, err := logger.NewLogger(cfg.ServiceName, telemetry.GetLogger())
 	if err != nil {
-		if shutdownFunc != nil {
-			_ = shutdownFunc(context.Background())
-		}
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 
 	dbConn, err := database.NewClient(l)
 	if err != nil {
-		if shutdownFunc != nil {
-			_ = shutdownFunc(context.Background())
-		}
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	queries := db.New(dbConn)
@@ -86,23 +90,21 @@ func New(cfg *Config) (*GRPCServer, error) {
 	redisClient, err := initRedisServer(ctx, l, cfg.ServiceName)
 	if err != nil {
 		cancel()
-		if shutdownFunc != nil {
-			_ = shutdownFunc(context.Background())
-		}
 		return nil, fmt.Errorf("failed to initialize Redis: %w", err)
 	}
 
 	cacheStore := cache.NewCacheStore(redisClient, l, cacheMetrics)
 
 	return &GRPCServer{
-		Logger:            l,
-		DB:                queries,
-		Ctx:               ctx,
-		Cancel:            cancel,
-		CacheStore:        cacheStore,
-		Redis:             redisClient,
-		TelemetryShutdown: shutdownFunc,
-		Config:            cfg,
+		Logger:     l,
+		DB:         queries,
+		DBPool:     dbConn,
+		Ctx:        ctx,
+		Cancel:     cancel,
+		CacheStore: cacheStore,
+		Redis:      redisClient,
+		Telemetry:  telemetry,
+		Config:     cfg,
 	}, nil
 }
 
@@ -229,6 +231,17 @@ func (s *GRPCServer) gracefulShutdown(
 func (s *GRPCServer) Cleanup() {
 	s.Logger.Info("Cleaning up resources...")
 
+	for i := len(s.cleanupHooks) - 1; i >= 0; i-- {
+		if err := s.cleanupHooks[i](); err != nil {
+			s.Logger.Error("Failed to close application resource", zap.Error(err))
+		}
+	}
+
+	if s.DBPool != nil {
+		s.DBPool.Close()
+		s.Logger.Info("Database connection pool closed")
+	}
+
 	if s.Redis != nil {
 		if err := s.Redis.Close(); err != nil {
 			s.Logger.Error("Failed to close Redis connection", zap.Error(err))
@@ -237,8 +250,8 @@ func (s *GRPCServer) Cleanup() {
 		}
 	}
 
-	if s.TelemetryShutdown != nil {
-		if err := s.TelemetryShutdown(context.Background()); err != nil {
+	if s.Telemetry != nil {
+		if err := s.Telemetry.Shutdown(context.Background()); err != nil {
 			s.Logger.Error("Failed to shutdown telemetry", zap.Error(err))
 		} else {
 			s.Logger.Info("Telemetry shutdown successfully")
@@ -249,6 +262,10 @@ func (s *GRPCServer) Cleanup() {
 }
 
 func initPyroscope(cfg *Config) error {
+	if os.Getenv("PYROSCOPE_ENABLED") != "true" {
+		return nil
+	}
+
 	_, err := pyroscope.Start(pyroscope.Config{
 		ApplicationName: cfg.ServiceName,
 		ServerAddress:   os.Getenv("PYROSCOPE_SERVER"),
@@ -268,17 +285,67 @@ func initPyroscope(cfg *Config) error {
 	return err
 }
 
+func initTelemetry(cfg *Config) *otel_pkg.Telemetry {
+	return otel_pkg.NewTelemetry(otel_pkg.Config{
+		ServiceName:            cfg.ServiceName,
+		ServiceVersion:         cfg.ServiceVersion,
+		Environment:            cfg.Environment,
+		Endpoint:               convert.EnvOr("OTEL_ENDPOINT", cfg.OtelEndpoint),
+		Insecure:               true,
+		EnableRuntimeMetrics:   os.Getenv("OTEL_ENABLED") != "false",
+		RuntimeMetricsInterval: 15 * time.Second,
+		Disabled:               os.Getenv("OTEL_ENABLED") == "false",
+	})
+}
+
 func initRedisServer(ctx context.Context, logger logger.LoggerInterface, serviceName string) (*redis.Client, error) {
-	return redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%s", viper.GetString("REDIS_HOST"), viper.GetString("REDIS_PORT")),
-		Password:     viper.GetString("REDIS_PASSWORD"),
-		DB:           viper.GetInt("REDIS_DB"),
+	// Domain services expose Redis settings with a service suffix (for example,
+	// REDIS_HOST_TOPUP). The previous generic-key lookup silently produced
+	// ":0", allowing a broken cache client to reach request handling.
+	suffix := strings.ToUpper(strings.TrimSuffix(serviceName, "-service"))
+	getString := func(suffixed, generic, fallback string) string {
+		value := viper.GetString(suffixed)
+		if value == "" {
+			value = viper.GetString(generic)
+		}
+		if value == "" {
+			value = fallback
+		}
+		return value
+	}
+
+	host := getString("REDIS_HOST_"+suffix, "REDIS_HOST", "")
+	port := getString("REDIS_PORT_"+suffix, "REDIS_PORT", "6379")
+	if host == "" {
+		return nil, fmt.Errorf("Redis host is not configured for %s", serviceName)
+	}
+
+	password := getString("REDIS_PASSWORD_"+suffix, "REDIS_PASSWORD", "")
+	db := viper.GetInt("REDIS_DB_" + suffix)
+	if db == 0 {
+		db = viper.GetInt("REDIS_DB")
+	}
+
+	client := redis.NewClient(&redis.Options{
+		Addr:         fmt.Sprintf("%s:%s", host, port),
+		Password:     password,
+		DB:           db,
 		DialTimeout:  RedisDialTimeout,
 		ReadTimeout:  RedisReadTimeout,
 		WriteTimeout: RedisWriteTimeout,
 		PoolSize:     RedisPoolSize,
 		MinIdleConns: RedisMinIdleConns,
-	}), nil
+	})
+
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := client.Ping(pingCtx).Err(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("failed to ping Redis for %s at %s:%s: %w", serviceName, host, port, err)
+	}
+
+	logger.Info("Redis connection established", zap.String("addr", host+":"+port), zap.Int("db", db))
+	return client, nil
 }
 
 func (s *GRPCServer) spawnMonitoringTask() <-chan struct{} {
@@ -310,18 +377,13 @@ func (s *GRPCServer) monitorCache() {
 	if refCount > CacheRefCountThreshold {
 		logLevel = zap.WarnLevel
 	}
-
-	fields := []zap.Field{
-		zap.Int64("ref_count", refCount),
-		zap.Int64("total_keys", stats.TotalKeys),
-		zap.Float64("hit_rate", stats.HitRate),
-		zap.String("memory_used", stats.MemoryUsedHuman),
-	}
-
-	if logLevel == zap.WarnLevel {
-		s.Logger.Warn("Cache statistics", fields...)
-	} else {
-		s.Logger.Info("Cache statistics", fields...)
+	if ce := s.Logger.Check(logLevel, "Cache statistics"); ce != nil {
+		ce.Write(
+			zap.Int64("ref_count", refCount),
+			zap.Int64("total_keys", stats.TotalKeys),
+			zap.Float64("hit_rate", stats.HitRate),
+			zap.String("memory_used", stats.MemoryUsedHuman),
+		)
 	}
 }
 

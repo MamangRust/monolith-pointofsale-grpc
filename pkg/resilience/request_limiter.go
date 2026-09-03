@@ -37,8 +37,6 @@ func (rl *RequestLimiter) TryAcquire() bool {
 }
 
 func (rl *RequestLimiter) Release() {
-	rl.semaphore.Release(1)
-
 	newInFlight := atomic.AddInt64(&rl.inFlight, -1)
 
 	if newInFlight < 0 {
@@ -48,7 +46,10 @@ func (rl *RequestLimiter) Release() {
 		)
 
 		atomic.StoreInt64(&rl.inFlight, 0)
+		return
 	}
+
+	rl.semaphore.Release(1)
 }
 
 func (rl *RequestLimiter) AvailablePermits() int64 {

@@ -52,7 +52,7 @@ type UpdateProductRequest struct {
 	Brand        string  `json:"brand" validate:"required"`
 	Weight       int     `json:"weight" validate:"required"`
 	SlugProduct  *string `json:"slug_product"`
-	ImageProduct string  `json:"image_product" validate:"required"`
+	ImageProduct string  `json:"image_product"`
 	Barcode      *string `json:"barcode"`
 }
 

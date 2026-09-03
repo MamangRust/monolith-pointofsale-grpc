@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/MamangRust/monolith-point-of-sale-pkg/server"
-	"github.com/MamangRust/monolith-point-of-sale-product/internal/apps"
+	"github.com/MamangRust/monolith-point-of-sale-product/apps"
 	"github.com/spf13/viper"
 )
 

@@ -49,18 +49,34 @@ func ParseGrpcError(err error) *AppError {
 
 	for _, detail := range st.Details() {
 		if res, ok := detail.(*pb.ErrorResponse); ok {
+			code := int(res.Code)
+			if code < http.StatusBadRequest || code > 599 {
+				code = grpcToHttpCode(st.Code())
+			}
+			if code < http.StatusBadRequest || code > 599 {
+				code = http.StatusInternalServerError
+			}
+			errorType := ErrorType(res.Status)
+			if errorType == "" {
+				errorType = grpcToErrorType(st.Code())
+			}
 			return &AppError{
-				Type:    ErrorType(res.Status),
-				Code:    int(res.Code),
+				Type:    errorType,
+				Code:    code,
 				Message: res.Message,
 			}
 		}
 	}
 
-	// Fallback to gRPC status code
+	// Fallback to gRPC status code. A zero/invalid detail code must never
+	// become a successful or malformed HTTP response.
+	code := grpcToHttpCode(st.Code())
+	if code < http.StatusBadRequest || code > 599 {
+		code = http.StatusInternalServerError
+	}
 	return &AppError{
 		Type:    grpcToErrorType(st.Code()),
-		Code:    grpcToHttpCode(st.Code()),
+		Code:    code,
 		Message: st.Message(),
 	}
 }
@@ -85,6 +101,8 @@ func httpToGrpcCode(code int) codes.Code {
 		return codes.ResourceExhausted
 	case http.StatusGatewayTimeout:
 		return codes.DeadlineExceeded
+	case http.StatusServiceUnavailable:
+		return codes.Unavailable
 	default:
 		return codes.Internal
 	}
@@ -106,6 +124,8 @@ func grpcToHttpCode(code codes.Code) int {
 		return http.StatusTooManyRequests
 	case codes.DeadlineExceeded:
 		return http.StatusGatewayTimeout
+	case codes.Unavailable:
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}
@@ -125,6 +145,10 @@ func grpcToErrorType(code codes.Code) ErrorType {
 		return ErrorTypeUnauthorized
 	case codes.DeadlineExceeded:
 		return ErrorTypeTimeout
+	case codes.ResourceExhausted:
+		return ErrorTypeBadRequest
+	case codes.Unavailable:
+		return ErrorTypeUnavailable
 	default:
 		return ErrorTypeInternal
 	}

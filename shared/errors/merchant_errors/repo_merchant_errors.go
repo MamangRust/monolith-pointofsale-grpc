@@ -1,20 +1,22 @@
 package merchant_errors
 
-import "errors"
+import (
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
+)
 
 var (
-	ErrFindAllMerchants = errors.New("failed to find all merchants")
-	ErrFindByActive     = errors.New("failed to find active merchants")
-	ErrFindByTrashed    = errors.New("failed to find trashed merchants")
-	ErrFindById         = errors.New("failed to find merchant by ID")
+	ErrFindAllMerchants = errors.ErrInternal.WithMessage("Failed to find all merchants")
+	ErrFindByActive     = errors.ErrInternal.WithMessage("Failed to find active merchants")
+	ErrFindByTrashed    = errors.ErrInternal.WithMessage("Failed to find trashed merchants")
+	ErrFindById         = errors.ErrInternal.WithMessage("Failed to find merchant by ID")
 
-	ErrCreateMerchant             = errors.New("failed to create merchant")
-	ErrUpdateMerchant             = errors.New("failed to update merchant")
-	ErrUpdateMerchantStatusFailed = errors.New("failed to update merchant status")
+	ErrCreateMerchant             = errors.ErrInternal.WithMessage("Failed to create merchant")
+	ErrUpdateMerchant             = errors.ErrInternal.WithMessage("Failed to update merchant")
+	ErrUpdateMerchantStatusFailed = errors.ErrInternal.WithMessage("Failed to update merchant status")
 
-	ErrTrashedMerchant            = errors.New("failed to move merchant to trash")
-	ErrRestoreMerchant            = errors.New("failed to restore merchant from trash")
-	ErrDeleteMerchantPermanent    = errors.New("failed to permanently delete merchant")
-	ErrRestoreAllMerchant         = errors.New("failed to restore all trashed merchants")
-	ErrDeleteAllMerchantPermanent = errors.New("failed to permanently delete all trashed merchants")
+	ErrTrashedMerchant            = errors.ErrInternal.WithMessage("Failed to move merchant to trash")
+	ErrRestoreMerchant            = errors.ErrInternal.WithMessage("Failed to restore merchant from trash")
+	ErrDeleteMerchantPermanent    = errors.ErrInternal.WithMessage("Failed to permanently delete merchant")
+	ErrRestoreAllMerchant         = errors.ErrInternal.WithMessage("Failed to restore all trashed merchants")
+	ErrDeleteAllMerchantPermanent = errors.ErrInternal.WithMessage("Failed to permanently delete all trashed merchants")
 )

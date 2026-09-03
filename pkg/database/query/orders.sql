@@ -671,6 +671,19 @@ FROM orders
 WHERE order_id = $1
   AND deleted_at IS NULL;
 
+-- GetOrderByIDTrashed: Retrieves an order regardless of soft-delete state
+-- name: GetOrderByIDTrashed :one
+SELECT *
+FROM orders
+WHERE order_id = $1;
+
+-- GetAllOrdersTrashed: Retrieves all soft-deleted orders for per-order restoration
+-- name: GetAllOrdersTrashed :many
+SELECT *
+FROM orders
+WHERE deleted_at IS NOT NULL
+ORDER BY order_id;
+
 -- UpdateOrder: Modifies order information
 -- Purpose: Update order details (primarily total price)
 -- Parameters:
@@ -727,6 +740,12 @@ WHERE
     AND deleted_at IS NOT NULL
   RETURNING *;
 
+-- DeleteOrder: Removes an active order during failed order compensation
+-- name: DeleteOrder :exec
+DELETE FROM orders
+WHERE order_id = $1
+  AND deleted_at IS NULL;
+
 -- DeleteOrderPermanently: Hard-deletes an order
 -- Purpose: Completely remove order from database
 -- Parameters:
@@ -736,21 +755,39 @@ WHERE
 --   - No return value (exec-only operation)
 --   - Irreversible action - use with caution
 --   - Should trigger deletion of related order_items
--- name: DeleteOrderPermanently :exec
-DELETE FROM orders WHERE order_id = $1 AND deleted_at IS NOT NULL;
-
--- RestoreAllOrders: Mass restoration of cancelled orders
--- Purpose: Recover all trashed orders at once
--- Business Logic:
---   - Reactivates all soft-deleted orders
---   - No parameters needed (bulk operation)
---   - Typically used during system recovery
--- name: RestoreAllOrders :exec
-UPDATE orders
-SET
-    deleted_at = NULL
-WHERE
-    deleted_at IS NOT NULL;
+-- name: DeleteOrderPermanently :one
+WITH target AS MATERIALIZED (
+    SELECT
+        o.order_id,
+        o.merchant_id,
+        o.cashier_id,
+        o.total_price,
+        o.created_at,
+        o.updated_at,
+        o.deleted_at
+    FROM orders AS o
+    WHERE o.order_id = $1
+      AND o.deleted_at IS NOT NULL
+), deleted_transactions AS (
+    DELETE FROM transactions AS t
+    WHERE t.order_id IN (SELECT target.order_id FROM target)
+), deleted_order_items AS (
+    DELETE FROM order_items AS oi
+    WHERE oi.order_id IN (SELECT target.order_id FROM target)
+), deleted_order AS (
+    DELETE FROM orders AS o
+    WHERE o.order_id IN (SELECT target.order_id FROM target)
+    RETURNING o.order_id, o.merchant_id, o.cashier_id, o.total_price, o.created_at, o.updated_at, o.deleted_at
+)
+SELECT
+    deleted_order.order_id,
+    deleted_order.merchant_id,
+    deleted_order.cashier_id,
+    deleted_order.total_price,
+    deleted_order.created_at,
+    deleted_order.updated_at,
+    deleted_order.deleted_at
+FROM deleted_order;
 
 -- DeleteAllPermanentOrders: Purges all cancelled orders
 -- Purpose: Clean up all soft-deleted order records
@@ -759,7 +796,13 @@ WHERE
 --   - Only affects already cancelled orders
 --   - Typically used during database maintenance
 --   - Should be restricted to admin users
--- name: DeleteAllPermanentOrders :exec
+-- name: DeleteAllPermanentOrders :execresult
+WITH target AS MATERIALIZED (
+    SELECT order_id FROM orders WHERE deleted_at IS NOT NULL
+), deleted_transactions AS (
+    DELETE FROM transactions WHERE order_id IN (SELECT order_id FROM target)
+), deleted_order_items AS (
+    DELETE FROM order_items WHERE order_id IN (SELECT order_id FROM target)
+)
 DELETE FROM orders
-WHERE
-    deleted_at IS NOT NULL;
+WHERE order_id IN (SELECT order_id FROM target);

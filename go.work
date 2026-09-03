@@ -13,7 +13,9 @@ use (
 	./service/order_item
 	./service/product
 	./service/role
+	./service/seeder
 	./service/transaction
 	./service/user
 	./shared
+	./tests
 )

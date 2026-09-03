@@ -131,47 +131,31 @@ WHERE order_id = $1
 --   - Automatically updates `updated_at` timestamp
 -- name: UpdateOrderItem :one
 UPDATE order_items
-SET quantity = $2,
-    price = $3,
+SET product_id = $2,
+    quantity = $3,
+    price = $4,
     updated_at = CURRENT_TIMESTAMP
 WHERE order_item_id = $1
   AND deleted_at IS NULL
   RETURNING *;
 
 
--- TrashOrderItem: Soft-deletes a specific order item
--- Purpose: Marks an item as deleted without removing it from DB
--- Parameters:
---   $1: order_item_id
--- Returns:
---   The soft-deleted order item
--- Business Logic:
---   - Preserves record for potential restoration or audit
--- name: TrashOrderItem :one
-UPDATE order_items
-SET deleted_at = current_timestamp
-WHERE order_item_id = $1  
-AND deleted_at IS NULL
-RETURNING *;
+-- DeleteOrderItem: Deletes an active order item during failed order compensation
+-- name: DeleteOrderItem :exec
+DELETE FROM order_items
+WHERE order_item_id = $1
+  AND deleted_at IS NULL;
 
-
--- RestoreOrderItem: Restores a previously trashed order item
--- Purpose: Undoes a soft-delete action
--- Parameters:
---   $1: order_item_id
--- Returns:
---   The restored order item
--- Business Logic:
---   - Only restores items currently soft-deleted
--- name: RestoreOrderItem :one
-UPDATE order_items
-SET
-    deleted_at = NULL
-WHERE
-    order_item_id = $1
-    AND deleted_at IS NOT NULL
-  RETURNING *;
-
+-- DeleteOrderItemsByOrder: Permanently deletes all items belonging to an order
+-- name: DeleteOrderItemsByOrder :exec
+DELETE FROM order_items
+WHERE order_items.order_id = $1
+  AND EXISTS (
+      SELECT 1
+      FROM orders
+      WHERE orders.order_id = order_items.order_id
+        AND orders.deleted_at IS NOT NULL
+  );
 
 -- DeleteOrderItemPermanently: Permanently deletes a trashed order item
 -- Purpose: Removes the record entirely from the database
@@ -185,20 +169,6 @@ WHERE
 DELETE FROM order_items WHERE order_item_id = $1 AND deleted_at IS NOT NULL;
 
 
--- RestoreAllOrdersItem: Restores all soft-deleted order items
--- Purpose: Mass recovery of trashed items
--- Parameters: None
--- Returns: None
--- Business Logic:
---   - Resets deleted_at to NULL for all trashed items
--- name: RestoreAllOrdersItem :exec
-UPDATE order_items
-SET
-    deleted_at = NULL
-WHERE
-    deleted_at IS NOT NULL;
-
-
 -- DeleteAllPermanentOrdersItem: Permanently deletes all trashed order items
 -- Purpose: Performs hard delete of all soft-deleted items
 -- Parameters: None
@@ -206,8 +176,9 @@ WHERE
 -- Business Logic:
 --   - Used for data cleanup or archival enforcement
 -- name: DeleteAllPermanentOrdersItem :exec
-DELETE FROM order_items 
-WHERE
-    deleted_at IS NOT NULL;
+DELETE FROM order_items
+WHERE order_id IN (
+    SELECT order_id FROM orders WHERE deleted_at IS NOT NULL
+);
 
 

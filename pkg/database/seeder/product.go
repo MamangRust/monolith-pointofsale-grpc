@@ -2,7 +2,6 @@ package seeder
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
@@ -66,26 +65,26 @@ func (r *productSeeder) Seed() error {
 		merchant := merchants[rand.Intn(len(merchants))]
 		category := categories[rand.Intn(len(categories))]
 		name := productNames[rand.Intn(len(productNames))]
-		brand := sql.NullString{String: brands[rand.Intn(len(brands))], Valid: true}
+		brand := brands[rand.Intn(len(brands))]
 		price := int32(rand.Intn(5000000) + 50000)
 		countInStock := int32(rand.Intn(100) + 1)
-		weight := sql.NullInt32{Int32: int32(rand.Intn(5000) + 100), Valid: true}
-		slug := sql.NullString{String: fmt.Sprintf("%s-%d", name, rand.Intn(1000)), Valid: true}
-		image := sql.NullString{String: images[rand.Intn(len(images))], Valid: true}
-		barcode := sql.NullString{String: fmt.Sprintf("BC-%d", rand.Intn(9999999)), Valid: true}
+		weight := int32(rand.Intn(5000) + 100)
+		slug := fmt.Sprintf("%s-%d", name, rand.Intn(1000))
+		image := images[rand.Intn(len(images))]
+		barcode := fmt.Sprintf("BC-%d", rand.Intn(9999999))
 
 		_, err := r.db.CreateProduct(r.ctx, db.CreateProductParams{
 			MerchantID:   merchant.MerchantID,
 			CategoryID:   category.CategoryID,
 			Name:         name,
-			Description:  sql.NullString{String: fmt.Sprintf("Description for %s", name), Valid: true},
+			Description:  ptrString(fmt.Sprintf("Description for %s", name)),
 			Price:        price,
 			CountInStock: countInStock,
-			Brand:        brand,
-			Weight:       weight,
-			SlugProduct:  slug,
-			ImageProduct: image,
-			Barcode:      barcode,
+			Brand:        ptrString(brand),
+			Weight:       ptrInt32(weight),
+			SlugProduct:  ptrString(slug),
+			ImageProduct: ptrString(image),
+			Barcode:      ptrString(barcode),
 		})
 
 		if err != nil {

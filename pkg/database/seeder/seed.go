@@ -91,3 +91,12 @@ func (s *Seeder) seedWithDelay(entityName string, seedFunc func() error) error {
 	time.Sleep(30 * time.Second)
 	return nil
 }
+
+func ptrString(s string) *string {
+	return &s
+}
+
+func ptrInt32(i int32) *int32 {
+	return &i
+}
+

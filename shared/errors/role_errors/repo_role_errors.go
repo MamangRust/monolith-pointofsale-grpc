@@ -1,21 +1,23 @@
 package role_errors
 
-import "errors"
+import (
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
+)
 
 var (
-	ErrRoleNotFound     = errors.New("role not found")
-	ErrFindAllRoles     = errors.New("failed to find all Roles")
-	ErrFindActiveRoles  = errors.New("failed to find active Roles")
-	ErrFindTrashedRoles = errors.New("failed to find trashed Roles")
-	ErrRoleConflict     = errors.New("failed Role already exists")
+	ErrRoleNotFound     = errors.ErrNotFound.WithMessage("Role not found")
+	ErrFindAllRoles     = errors.ErrInternal.WithMessage("Failed to find all roles")
+	ErrFindActiveRoles  = errors.ErrInternal.WithMessage("Failed to find active roles")
+	ErrFindTrashedRoles = errors.ErrInternal.WithMessage("Failed to find trashed roles")
+	ErrRoleConflict     = errors.ErrConflict.WithMessage("Role already exists")
 
-	ErrCreateRole = errors.New("failed to create Role")
-	ErrUpdateRole = errors.New("failed to update Role")
+	ErrCreateRole = errors.ErrInternal.WithMessage("Failed to create role")
+	ErrUpdateRole = errors.ErrInternal.WithMessage("Failed to update role")
 
-	ErrTrashedRole         = errors.New("failed to move Role to trash")
-	ErrRestoreRole         = errors.New("failed to restore Role from trash")
-	ErrDeleteRolePermanent = errors.New("failed to permanently delete Role")
+	ErrTrashedRole         = errors.ErrInternal.WithMessage("Failed to move role to trash")
+	ErrRestoreRole         = errors.ErrInternal.WithMessage("Failed to restore role from trash")
+	ErrDeleteRolePermanent = errors.ErrInternal.WithMessage("Failed to permanently delete role")
 
-	ErrRestoreAllRoles = errors.New("failed to restore all Roles")
-	ErrDeleteAllRoles  = errors.New("failed to permanently delete all Roles")
+	ErrRestoreAllRoles = errors.ErrInternal.WithMessage("Failed to restore all roles")
+	ErrDeleteAllRoles  = errors.ErrInternal.WithMessage("Failed to permanently delete all roles")
 )

@@ -1,8 +1,10 @@
 package userrole_errors
 
-import "errors"
+import (
+	"github.com/MamangRust/monolith-point-of-sale-shared/errors"
+)
 
 var (
-	ErrAssignRoleToUser = errors.New("failed to assign role to user")
-	ErrRemoveRole       = errors.New("failed to remove role from user")
+	ErrAssignRoleToUser = errors.ErrInternal.WithMessage("Failed to assign role to user")
+	ErrRemoveRole       = errors.ErrInternal.WithMessage("Failed to remove role from user")
 )

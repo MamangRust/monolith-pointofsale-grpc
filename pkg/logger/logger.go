@@ -1,64 +1,39 @@
 package logger
 
 import (
-	"fmt"
-	"log"
 	"os"
-	"path/filepath"
 	"sync"
 
+	"go.opentelemetry.io/contrib/bridges/otelzap"
+	"go.opentelemetry.io/otel/sdk/log"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-//go:generate mockgen -source=logger.go -destination=mocks/logger.go
 type LoggerInterface interface {
 	Info(message string, fields ...zap.Field)
 	Fatal(message string, fields ...zap.Field)
 	Debug(message string, fields ...zap.Field)
 	Error(message string, fields ...zap.Field)
 	Warn(message string, fields ...zap.Field)
+	Check(level zapcore.Level, message string) *zapcore.CheckedEntry
+	With(fields ...zap.Field) LoggerInterface
+	Sync() error
 }
 
 type Logger struct {
 	Log *zap.Logger
 }
 
-var once sync.Once
-var instance LoggerInterface
+var (
+	once     sync.Once
+	instance LoggerInterface
+)
 
-func NewLogger(service string) (LoggerInterface, error) {
+func NewLogger(service string, loggerProvider *log.LoggerProvider) (LoggerInterface, error) {
 	var setupErr error
 
 	once.Do(func() {
-		env := os.Getenv("APP_ENV")
-		if env == "" {
-			env = "development"
-		}
-
-		logDir := "./logs"
-
-		if env == "docker" || env == "production" || env == "kubernetes" {
-			logDir = "/var/log/app"
-		}
-
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			setupErr = fmt.Errorf("failed to create log directory '%s': %w", logDir, err)
-			log.Println("[WARN] Fallback to stdout only:", setupErr)
-		}
-
-		logPath := filepath.Join(logDir, fmt.Sprintf("%s.log", service))
-
-		var logFile *os.File
-		if setupErr == nil {
-			var err error
-			logFile, err = os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err != nil {
-				setupErr = fmt.Errorf("failed to open log file '%s': %w", logPath, err)
-				log.Println("[WARN] Fallback to stdout only:", setupErr)
-			}
-		}
-
 		encoderConfig := zapcore.EncoderConfig{
 			TimeKey:        "ts",
 			LevelKey:       "level",
@@ -74,23 +49,29 @@ func NewLogger(service string) (LoggerInterface, error) {
 			EncodeCaller:   zapcore.ShortCallerEncoder,
 		}
 
-		cores := []zapcore.Core{
-			zapcore.NewCore(
-				zapcore.NewJSONEncoder(encoderConfig),
-				zapcore.AddSync(os.Stdout),
-				zapcore.DebugLevel,
-			),
+		stdoutCore := zapcore.NewCore(
+			zapcore.NewJSONEncoder(encoderConfig),
+			zapcore.AddSync(os.Stdout),
+			zapcore.DebugLevel,
+		)
+
+		cores := []zapcore.Core{stdoutCore}
+		if loggerProvider != nil {
+			otelCore := otelzap.NewCore(
+				service,
+				otelzap.WithLoggerProvider(loggerProvider),
+			)
+			cores = append(cores, otelCore)
 		}
 
-		if logFile != nil {
-			cores = append(cores, zapcore.NewCore(
-				zapcore.NewJSONEncoder(encoderConfig),
-				zapcore.AddSync(logFile),
-				zapcore.DebugLevel,
-			))
-		}
+		core := zapcore.NewTee(cores...)
 
-		logger := zap.New(zapcore.NewTee(cores...), zap.AddCaller(), zap.AddCallerSkip(1))
+		logger := zap.New(core,
+			zap.AddCaller(),
+			zap.AddCallerSkip(1),
+			zap.AddStacktrace(zapcore.FatalLevel),
+		)
+
 		instance = &Logger{Log: logger}
 	})
 
@@ -115,4 +96,25 @@ func (l *Logger) Error(message string, fields ...zap.Field) {
 
 func (l *Logger) Warn(message string, fields ...zap.Field) {
 	l.Log.Warn(message, fields...)
+}
+
+func (l *Logger) Check(level zapcore.Level, message string) *zapcore.CheckedEntry {
+	return l.Log.Check(level, message)
+}
+
+func (l *Logger) With(fields ...zap.Field) LoggerInterface {
+	return &Logger{Log: l.Log.With(fields...)}
+}
+
+func (l *Logger) Sync() error {
+	return l.Log.Sync()
+}
+
+func GetInstance() LoggerInterface {
+	return instance
+}
+
+func ResetInstance() {
+	once = sync.Once{}
+	instance = nil
 }

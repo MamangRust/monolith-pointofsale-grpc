@@ -48,7 +48,7 @@ func (m *Manager) ValidateToken(accessToken string) (string, error) {
 		}
 
 		return []byte(m.secretKey), nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 
 	if err != nil {
 		if errors.Is(err, jwt.ErrTokenExpired) {

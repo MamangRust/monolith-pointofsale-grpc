@@ -2,7 +2,6 @@ package seeder
 
 import (
 	"context"
-	"database/sql"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
 	"github.com/MamangRust/monolith-point-of-sale-pkg/logger"
@@ -70,7 +69,7 @@ func (r *orderSeeder) Seed() error {
 
 		products, err := r.db.GetProductsByMerchant(r.ctx, db.GetProductsByMerchantParams{
 			MerchantID: merchant.MerchantID,
-			Column2:    sql.NullString{},
+			Column2:    nil,
 			Column3:    0,
 			Column4:    0,
 			Column5:    0,

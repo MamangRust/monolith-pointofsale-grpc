@@ -2,7 +2,6 @@ package seeder
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
@@ -40,19 +39,19 @@ func (r *categorySeeder) Seed() error {
 
 	for i := 0; i < 10; i++ {
 		name := categoryNames[i%len(categoryNames)]
-		description := sql.NullString{String: categoryDescriptions[i%len(categoryDescriptions)], Valid: true}
-		slugCategory := sql.NullString{String: fmt.Sprintf("%s-%d", name, i+1), Valid: true}
+		description := categoryDescriptions[i%len(categoryDescriptions)]
+		slugCategory := fmt.Sprintf("%s-%d", name, i+1)
 
 		_, err := r.db.CreateCategory(r.ctx, db.CreateCategoryParams{
 			Name:         name,
-			Description:  description,
-			SlugCategory: slugCategory,
+			Description:  ptrString(description),
+			SlugCategory: ptrString(slugCategory),
 		})
 		if err != nil {
 			r.logger.Error("Failed to create category:", zap.Error(err))
 			return err
 		}
-		r.logger.Debug("Category created:", zap.String("slug", slugCategory.String))
+		r.logger.Debug("Category created:", zap.String("slug", slugCategory))
 	}
 
 	r.logger.Info("Category seeding completed successfully.", zap.Int("count", 10))

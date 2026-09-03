@@ -2,7 +2,6 @@ package seeder
 
 import (
 	"context"
-	"database/sql"
 	"math/rand"
 
 	db "github.com/MamangRust/monolith-point-of-sale-pkg/database/schema"
@@ -65,10 +64,7 @@ func (r *transactionSeeder) Seed() error {
 			OrderID:       selectedOrderId.OrderID,
 			PaymentMethod: paymentMethod,
 			Amount:        int32(amount),
-			ChangeAmount: sql.NullInt32{
-				Int32: int32(changeAmount),
-				Valid: true,
-			},
+			ChangeAmount:  ptrInt32(int32(changeAmount)),
 			PaymentStatus: paymentStatus,
 			MerchantID:    selectedMerchantId.MerchantID,
 		})

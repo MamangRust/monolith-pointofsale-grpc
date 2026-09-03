@@ -1,14 +1,14 @@
 -- GetCashiers: Retrieves paginated list of active cashiers with search capability
 -- Purpose: List all active cashiers for management UI
 -- Parameters:
---   $1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
+--   $1: search_term - Optional text to filter cashiers by name (NULL for no filter)
 --   $2: limit - Maximum number of records to return
 --   $3: offset - Number of records to skip for pagination
 -- Returns:
 --   All cashier fields plus total_count of matching records
 -- Business Logic:
 --   - Excludes soft-deleted cashiers (deleted_at IS NULL)
---   - Supports partial text matching on name and username fields (case-insensitive)
+--   - Supports partial text matching on name field (case-insensitive)
 --   - Returns newest cashiers first (created_at DESC)
 --   - Provides total_count for pagination calculations
 -- name: GetCashiers :many
@@ -17,21 +17,21 @@ SELECT
     COUNT(*) OVER() AS total_count
 FROM cashiers
 WHERE deleted_at IS NULL
-  AND ($1::TEXT IS NULL OR name ILIKE '%' || $1 || '%' OR username ILIKE '%' || $1 || '%')
+  AND ($1::TEXT IS NULL OR name ILIKE '%' || $1 || '%')
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- GetCashiersActive: Retrieves paginated list of active cashiers with search capability
 -- Purpose: List all active cashiers for management UI
 -- Parameters:
---   $1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
+--   $1: search_term - Optional text to filter cashiers by name (NULL for no filter)
 --   $2: limit - Maximum number of records to return
 --   $3: offset - Number of records to skip for pagination
 -- Returns:
 --   All cashier fields plus total_count of matching records
 -- Business Logic:
 --   - Excludes soft-deleted cashiers (deleted_at IS NULL)
---   - Supports partial text matching on name and username fields (case-insensitive)
+--   - Supports partial text matching on name field (case-insensitive)
 --   - Returns newest cashiers first (created_at DESC)
 --   - Provides total_count for pagination calculations
 -- name: GetCashiersActive :many
@@ -40,21 +40,21 @@ SELECT
     COUNT(*) OVER() AS total_count
 FROM cashiers
 WHERE deleted_at IS NULL
-  AND ($1::TEXT IS NULL OR name ILIKE '%' || $1 || '%' OR username ILIKE '%' || $1 || '%')
+  AND ($1::TEXT IS NULL OR name ILIKE '%' || $1 || '%')
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- GetCashiersTrashed: Retrieves paginated list of soft-deleted cashiers with search capability
 -- Purpose: List all trashed (soft-deleted) cashiers for recovery or audit purposes
 -- Parameters:
---   $1: search_term - Optional text to filter cashiers by name or username (NULL for no filter)
+--   $1: search_term - Optional text to filter cashiers by name (NULL for no filter)
 --   $2: limit - Maximum number of records to return
 --   $3: offset - Number of records to skip for pagination
 -- Returns:
 --   All cashier fields plus total_count of matching records
 -- Business Logic:
 --   - Includes only soft-deleted cashiers (deleted_at IS NOT NULL)
---   - Supports partial text matching on name and username fields (case-insensitive)
+--   - Supports partial text matching on name field (case-insensitive)
 --   - Returns newest deleted cashiers first (created_at DESC)
 --   - Provides total_count for pagination calculations
 -- name: GetCashiersTrashed :many
@@ -63,7 +63,7 @@ SELECT
     COUNT(*) OVER() AS total_count
 FROM cashiers
 WHERE deleted_at IS NOT NULL
-  AND ($1::TEXT IS NULL OR name ILIKE '%' || $1 || '%' OR username ILIKE '%' || $1 || '%')
+  AND ($1::TEXT IS NULL OR name ILIKE '%' || $1 || '%')
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 

@@ -60,6 +60,9 @@ func (m *merchantDocumentResponse) ToApiResponseMerchantDocumentDeleteAt(resp *p
 }
 
 func (m *merchantDocumentResponse) mapMerchantDocument(doc *pb.MerchantDocument) *response.MerchantDocumentResponse {
+	if doc == nil {
+		return nil
+	}
 	return &response.MerchantDocumentResponse{
 		ID:           int(doc.DocumentId),
 		MerchantID:   int(doc.MerchantId),
@@ -81,6 +84,9 @@ func (m *merchantDocumentResponse) mapMerchantDocuments(docs []*pb.MerchantDocum
 }
 
 func (m *merchantDocumentResponse) mapMerchantDocumentDeletedAt(doc *pb.MerchantDocumentDeleteAt) *response.MerchantDocumentResponseDeleteAt {
+	if doc == nil {
+		return nil
+	}
 	var deletedAt *string
 
 	if doc.DeletedAt != nil {

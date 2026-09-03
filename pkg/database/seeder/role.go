@@ -26,6 +26,8 @@ func NewRoleSeeder(db *db.Queries, ctx context.Context, logger logger.LoggerInte
 
 func (r *roleSeeder) Seed() error {
 	randomRoles := []string{
+		"ROLE_ADMIN",
+		"Admin Access 1",
 		"Super Admin",
 		"Admin",
 		"Store Manager",

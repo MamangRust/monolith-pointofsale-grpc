@@ -29,8 +29,8 @@ type ImageUpload struct {
 	logger logger.LoggerInterface
 }
 
-func NewImageUpload() ImageUploads {
-	return &ImageUpload{}
+func NewImageUpload(logger logger.LoggerInterface) ImageUploads {
+	return &ImageUpload{logger: logger}
 }
 
 func (h *ImageUpload) EnsureUploadDirectory(uploadDir string) error {
